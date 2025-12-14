@@ -1,0 +1,12 @@
+# NDVI Handheld - Gerber Files
+# This is a placeholder file for the Gerber manufacturing files
+# The actual ZIP archive will contain:
+# - Copper layers (.GTL, .GBL, .G2, .G3)
+# - Solder mask (.GTS, .GBS)
+# - Solder paste (.GTP, .GBP)
+# - Drill files (.TXT, .DRL)
+# - Pick and place (.txt)
+# 
+# License: CERN OHL-W v2
+
+# Placeholder content - actual Gerber ZIP file to be added
