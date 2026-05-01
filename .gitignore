@@ -79,6 +79,9 @@ wheels/
 .installed.cfg
 *.egg
 
+!firmware/lib/
+!firmware/lib/**
+
 # IDEs and editors
 .vscode/
 .idea/

@@ -1,0 +1,644 @@
+/***************************************************
+  AS7265X dual-sensor outdoor NDVI meter (ESP32)
+
+  - Bulbs OFF (ambient light)
+  - Uses channels I (red-ish) and V (NIR-ish) for NDVI
+  - UP sensor: incident light (sky) on Wire1 (default SDA/SCL)
+  - DOWN sensor: reflected light (turf) on Wire (custom GPIOs on PCB)
+  - Shows NDVI + battery % on ST7789 240x240 LCD (Pimoroni 1.3")
+  - Measures when BTN_MEASURE is pressed OR serial 'm' received
+  - Single measurement per press: UP then DOWN, ratio-based NDVI
+  - No grey-panel calibration — reflectance ratios used directly
+
+  Serial commands (115200 baud):
+    m  or  M  — trigger a measurement (newline also accepted)
+
+  IMPORTANT (Pimoroni 1.3" ST7789 240x240 SPI):
+  - No RST pin -> TFT_RST = -1
+  - BL is backlight enable, drive separately
+
+  Hot-plug behaviour:
+  - Sketch will boot if sensors are missing
+  - It keeps retrying init in the background
+
+  REQUIRES: SparkFun AS7265X library patched to accept a TwoWire&
+  argument in begin(). The stock library always uses Wire; without
+  this patch both sensors share the same bus and collide.
+****************************************************/
+
+#include "SparkFun_AS7265X.h"
+#include <Wire.h>
+#include <WiFi.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+#include <SPI.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+// ---------------- I2C ----------------
+// DOWN sensor on custom pins (cannot change due to PCB)
+#define I2C1_SDA_PIN 33
+#define I2C1_SCL_PIN 13
+
+// UP sensor on default SDA/SCL (Wire1)
+#define I2C2_SDA_PIN SDA
+#define I2C2_SCL_PIN SCL
+
+AS7265X sensor_DOWN;
+AS7265X sensor_UP;
+
+bool up_ok   = false;
+bool down_ok = false;
+
+// Retry logic
+unsigned long last_sensor_retry_ms = 0;
+const unsigned long SENSOR_RETRY_PERIOD_MS = 1000;
+
+// ---------------- ST7789 240x240 LCD ----------------
+#define SCREEN_WIDTH  240
+#define SCREEN_HEIGHT 240
+
+#define TFT_CS  A0
+#define TFT_DC  A1
+#define TFT_RST -1
+#define TFT_BL  A5
+
+Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
+
+// Colors (565)
+#define BLACK  0x0000
+#define GREEN  0x07E0
+#define RED    0xF800
+#define YELLOW 0xFFE0
+#define CYAN   0x07FF
+#define GREY   0x8410
+#define WHITE  0xFFFF
+
+// ---------------- Button ----------------
+#define BTN_MEASURE A2
+bool lastMeasureState = false;
+
+// ---------------- Battery ----------------
+#define BATT A3
+
+// ADC correction factor measured empirically for this board.
+// Multiply the raw ESP32 ADC voltage by this to get true voltage.
+// Re-measure with a multimeter if the board changes.
+#define ADC_CORRECTION_FACTOR 1.065f
+
+float batt_v_avg = 0.0f;
+int battery_soc  = 0;
+
+// Battery is sampled periodically in the main loop.
+unsigned long last_batt_sample_ms = 0;
+const unsigned long BATT_SAMPLE_PERIOD_MS = 5000;
+
+static const float voltagePoints[] = {
+  3.30f, 3.45f, 3.55f, 3.68f, 3.73f, 3.79f,
+  3.85f, 3.92f, 4.00f, 4.08f, 4.12f, 4.20f
+};
+
+static const float socPoints[] = {
+   0,  10,  20,  30,  40,  50,
+  60,  70,  80,  90,  95, 100
+};
+
+static inline float clampf(float x, float lo, float hi) {
+  if (x < lo) return lo;
+  if (x > hi) return hi;
+  return x;
+}
+
+float voltageToPercent(float v) {
+  const int N = sizeof(voltagePoints) / sizeof(voltagePoints[0]);
+  if (v <= voltagePoints[0])     return 0.0f;
+  if (v >= voltagePoints[N - 1]) return 100.0f;
+  for (int i = 0; i < N - 1; i++) {
+    if (v >= voltagePoints[i] && v <= voltagePoints[i + 1]) {
+      float t = (v - voltagePoints[i]) / (voltagePoints[i + 1] - voltagePoints[i]);
+      return socPoints[i] + t * (socPoints[i + 1] - socPoints[i]);
+    }
+  }
+  return 0.0f;
+}
+
+void configure_batt() {
+  pinMode(BATT, INPUT);
+  analogSetPinAttenuation(BATT, ADC_11db);
+}
+
+int read_voltage_percent() {
+  uint16_t raw = analogRead(BATT);
+  float voltage = (raw / 4095.0f) * 3.3f * ADC_CORRECTION_FACTOR * 2.0f;
+
+  if (batt_v_avg == 0.0f) {
+    batt_v_avg = voltage;
+  } else {
+    batt_v_avg = 0.8f * batt_v_avg + 0.2f * voltage;
+  }
+
+  return (int)clampf(voltageToPercent(batt_v_avg), 0.0f, 100.0f);
+}
+
+// ---------------- NDVI ----------------
+String message_NDVI = "---";
+float ndvi = 0.0f;
+uint32_t measurement_sequence = 0;
+unsigned long last_measurement_ms = 0;
+
+// Raw count threshold below which incident light is too low to trust.
+const float MIN_INCIDENT_SIGNAL = 50.0f;  // raw counts (0-65535)
+
+// Last raw incident readings — used for low-light heuristic.
+float last_red_UP = 0.0f;
+float last_nir_UP = 0.0f;
+
+// Last raw readings for all four channels — displayed on the NDVI screen.
+uint16_t last_raw_iU = 0;
+uint16_t last_raw_vU = 0;
+uint16_t last_raw_iD = 0;
+uint16_t last_raw_vD = 0;
+
+// ---------------- BLE ----------------
+static const char *BLE_DEVICE_NAME  = "Manti-S-00001";
+static const char *BLE_SERVICE_UUID = "9f4a6d90-f740-4d10-a947-8c6c20f4f9d1";
+static const char *BLE_STATUS_UUID  = "2d86686f-34f8-4f1b-a4ac-f127f90f7df0";
+
+BLEServer         *ble_server                = nullptr;
+BLEService        *ble_service               = nullptr;
+BLECharacteristic *ble_status_characteristic = nullptr;
+
+static SemaphoreHandle_t ble_mutex = nullptr;
+static bool _ble_connected         = false;
+static bool _ble_state_dirty       = false;
+static bool _ble_ui_dirty          = false;
+
+bool ble_was_connected = false;
+
+static inline void ble_set_connected(bool v) {
+  xSemaphoreTake(ble_mutex, portMAX_DELAY);
+  _ble_connected   = v;
+  _ble_state_dirty = true;
+  _ble_ui_dirty    = true;
+  xSemaphoreGive(ble_mutex);
+}
+static inline bool ble_take_state_dirty() {
+  xSemaphoreTake(ble_mutex, portMAX_DELAY);
+  bool d = _ble_state_dirty;
+  _ble_state_dirty = false;
+  xSemaphoreGive(ble_mutex);
+  return d;
+}
+static inline bool ble_take_ui_dirty() {
+  xSemaphoreTake(ble_mutex, portMAX_DELAY);
+  bool d = _ble_ui_dirty;
+  _ble_ui_dirty = false;
+  xSemaphoreGive(ble_mutex);
+  return d;
+}
+static inline bool ble_is_connected() {
+  xSemaphoreTake(ble_mutex, portMAX_DELAY);
+  bool v = _ble_connected;
+  xSemaphoreGive(ble_mutex);
+  return v;
+}
+
+enum ScreenMode {
+  SCREEN_MODE_STATUS,
+  SCREEN_MODE_NDVI,
+  SCREEN_MODE_MEASURING
+};
+
+ScreenMode current_screen_mode  = SCREEN_MODE_STATUS;
+int current_measuring_sample    = 0;
+int current_measuring_total     = 1;
+
+class MantisBLEServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *server) {
+    (void)server;
+    ble_set_connected(true);
+  }
+  void onDisconnect(BLEServer *server) {
+    ble_set_connected(false);
+    server->startAdvertising();
+  }
+};
+
+// ---------------- Forward declarations ----------------
+void drawHeaderStatus();
+void drawStatusScreen();
+void drawNDVIScreen();
+void drawMeasuringScreen(int currentSample, int totalSamples);
+void redrawCurrentScreen();
+void setupBLE();
+void serviceBLE();
+void updateBLEStatusValue();
+
+// ---------------- Sensor configuration ----------------
+void configure_sensor_common(AS7265X &s) {
+  s.disableIndicator();
+  s.disableBulb(AS7265x_LED_WHITE);
+  s.setIntegrationCycles(100);  // ~280 ms integration
+  s.setGain(AS7265X_GAIN_37X);
+}
+
+bool try_init_up_sensor() {
+  if (up_ok) return true;
+  if (!sensor_UP.begin(Wire1)) return false;
+  configure_sensor_common(sensor_UP);
+  return true;
+}
+
+bool try_init_down_sensor() {
+  if (down_ok) return true;
+  if (!sensor_DOWN.begin(Wire)) return false;
+  configure_sensor_common(sensor_DOWN);
+  return true;
+}
+
+void i2c_init_buses_once() {
+  Wire.begin(I2C1_SDA_PIN, I2C1_SCL_PIN, 400000);
+  delay(10);
+  Wire1.begin(I2C2_SDA_PIN, I2C2_SCL_PIN, 400000);
+  delay(10);
+}
+
+void retry_sensor_init_periodic() {
+  unsigned long now = millis();
+  if (now - last_sensor_retry_ms < SENSOR_RETRY_PERIOD_MS) return;
+  last_sensor_retry_ms = now;
+
+  bool up_now = try_init_up_sensor();
+  bool dn_now = try_init_down_sensor();
+
+  if (up_now != up_ok || dn_now != down_ok) {
+    up_ok   = up_now;
+    down_ok = dn_now;
+    updateBLEStatusValue();
+    drawStatusScreen();
+  } else {
+    up_ok   = up_now;
+    down_ok = dn_now;
+  }
+}
+
+// ---------------- UI ----------------
+void drawHeaderStatus() {
+  bool connected = ble_is_connected();
+  tft.setCursor(10, 10);
+  tft.setTextColor(connected ? CYAN : GREY);
+  tft.setTextSize(2);
+  tft.print("BLE");
+
+  if (connected) {
+    tft.fillCircle(55, 17, 4, CYAN);
+  } else {
+    tft.drawCircle(55, 17, 4, GREY);
+  }
+
+  tft.setCursor(140, 10);
+  tft.setTextColor(WHITE);
+  tft.setTextSize(2);
+  tft.print("BAT:");
+  tft.print(battery_soc);
+  tft.print("%");
+}
+
+void drawStatusScreen() {
+  current_screen_mode = SCREEN_MODE_STATUS;
+  tft.fillScreen(BLACK);
+  drawHeaderStatus();
+
+  tft.setCursor(10, 50);
+  tft.setTextSize(3);
+
+  if (up_ok) {
+    tft.setTextColor(GREEN);
+    tft.print("UP: OK");
+  } else {
+    tft.setTextColor(RED);
+    tft.print("UP: MISSING");
+  }
+
+  tft.setCursor(10, 90);
+  if (down_ok) {
+    tft.setTextColor(GREEN);
+    tft.print("DN: OK");
+  } else {
+    tft.setTextColor(RED);
+    tft.print("DN: MISSING");
+  }
+
+  tft.setCursor(10, 170);
+  tft.setTextColor(WHITE);
+  tft.setTextSize(2);
+  tft.println("Plug sensor anytime");
+  tft.setCursor(10, 195);
+  tft.println("Btn or serial 'm'");
+}
+
+bool isLowLight() {
+  if (message_NDVI == "---") return false;
+  if (last_red_UP < MIN_INCIDENT_SIGNAL &&
+      last_nir_UP < MIN_INCIDENT_SIGNAL) return true;
+  return false;
+}
+
+void drawNDVIScreen() {
+  current_screen_mode = SCREEN_MODE_NDVI;
+  tft.fillScreen(BLACK);
+  drawHeaderStatus();
+
+  if (!up_ok || !down_ok) {
+    tft.setCursor(10, 95);
+    tft.setTextColor(RED);
+    tft.setTextSize(3);
+    tft.println("CONNECT");
+    tft.setCursor(10, 130);
+    tft.println("SENSOR");
+    tft.setCursor(10, 200);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.println("Retrying...");
+    return;
+  }
+
+  if (isLowLight()) {
+    tft.setCursor(20, 55);
+    tft.setTextColor(RED);
+    tft.setTextSize(4);
+    tft.println("LOW");
+    tft.setCursor(20, 100);
+    tft.println("LIGHT");
+  } else {
+    tft.setCursor(35, 45);
+    if      (ndvi >= 0.5f) tft.setTextColor(GREEN);
+    else if (ndvi >= 0.2f) tft.setTextColor(YELLOW);
+    else                   tft.setTextColor(WHITE);
+    tft.setTextSize(5);
+    tft.println(message_NDVI);
+  }
+
+  // Raw counts — always shown regardless of low-light
+  tft.setTextSize(1);
+  tft.setTextColor(GREY);
+  tft.setCursor(10, 128);
+  tft.println("--- raw counts ---");
+
+  tft.setTextSize(2);
+  tft.setTextColor(CYAN);
+  tft.setCursor(10, 142);
+  tft.print("UP I:");
+  tft.print(last_raw_iU);
+  tft.print(" V:");
+  tft.println(last_raw_vU);
+
+  tft.setTextColor(YELLOW);
+  tft.setCursor(10, 164);
+  tft.print("DN I:");
+  tft.print(last_raw_iD);
+  tft.print(" V:");
+  tft.println(last_raw_vD);
+
+  tft.setCursor(10, 210);
+  tft.setTextColor(WHITE);
+  tft.setTextSize(2);
+  tft.println("Press to measure");
+}
+
+void drawMeasuringScreen(int currentSample, int totalSamples) {
+  current_screen_mode      = SCREEN_MODE_MEASURING;
+  current_measuring_sample = currentSample;
+  current_measuring_total  = totalSamples;
+  tft.fillScreen(BLACK);
+  drawHeaderStatus();
+
+  tft.setTextColor(WHITE);
+  tft.setTextSize(3);
+  tft.setCursor(20, 100);
+  tft.println("MEASURING");
+}
+
+void redrawCurrentScreen() {
+  if (current_screen_mode == SCREEN_MODE_MEASURING) {
+    drawMeasuringScreen(current_measuring_sample, current_measuring_total);
+  } else if (current_screen_mode == SCREEN_MODE_NDVI) {
+    drawNDVIScreen();
+  } else {
+    drawStatusScreen();
+  }
+}
+
+void updateBLEStatusValue() {
+  if (ble_status_characteristic == nullptr) return;
+
+  String payload = "NDVI=";
+  payload += message_NDVI;
+  payload += ",SEQ=";
+  payload += measurement_sequence;
+  payload += ",MS=";
+  payload += last_measurement_ms;
+  payload += ",BAT=";
+  payload += battery_soc;
+  payload += ",UP=";
+  payload += (up_ok  ? "1" : "0");
+  payload += ",DN=";
+  payload += (down_ok ? "1" : "0");
+
+  ble_status_characteristic->setValue(payload.c_str());
+
+  if (ble_is_connected()) {
+    ble_status_characteristic->notify();
+  }
+}
+
+void setupBLE() {
+  BLEDevice::init(BLE_DEVICE_NAME);
+
+  ble_server = BLEDevice::createServer();
+  ble_server->setCallbacks(new MantisBLEServerCallbacks());
+
+  ble_service = ble_server->createService(BLE_SERVICE_UUID);
+
+  ble_status_characteristic = ble_service->createCharacteristic(
+    BLE_STATUS_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+  );
+
+  updateBLEStatusValue();
+  ble_service->start();
+
+  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMaxPreferred(0x12);
+  BLEDevice::startAdvertising();
+}
+
+void printAllChannels(const char *label, AS7265X &sensor) {
+  Serial.println(label);
+
+  Serial.print("A (410 nm): "); Serial.println(sensor.getA());
+  Serial.print("B (435 nm): "); Serial.println(sensor.getB());
+  Serial.print("C (460 nm): "); Serial.println(sensor.getC());
+  Serial.print("D (485 nm): "); Serial.println(sensor.getD());
+  Serial.print("E (510 nm): "); Serial.println(sensor.getE());
+  Serial.print("F (535 nm): "); Serial.println(sensor.getF());
+
+  Serial.print("G (560 nm): "); Serial.println(sensor.getG());
+  Serial.print("H (585 nm): "); Serial.println(sensor.getH());
+  Serial.print("I (645 nm): "); Serial.println(sensor.getI());
+  Serial.print("J (705 nm): "); Serial.println(sensor.getJ());
+  Serial.print("K (900 nm): "); Serial.println(sensor.getK());
+  Serial.print("L (940 nm): "); Serial.println(sensor.getL());
+
+  Serial.print("R (610 nm): "); Serial.println(sensor.getR());
+  Serial.print("S (680 nm): "); Serial.println(sensor.getS());
+  Serial.print("T (730 nm): "); Serial.println(sensor.getT());
+  Serial.print("U (760 nm): "); Serial.println(sensor.getU());
+  Serial.print("V (810 nm): "); Serial.println(sensor.getV());
+  Serial.print("W (860 nm): "); Serial.println(sensor.getW());
+}
+
+void serviceBLE() {
+  if (ble_take_state_dirty()) {
+    bool connected = ble_is_connected();
+    if (!connected && ble_was_connected) {
+      Serial.println("BLE disconnected");
+    } else if (connected && !ble_was_connected) {
+      Serial.println("BLE connected");
+    }
+    ble_was_connected = connected;
+    updateBLEStatusValue();
+  }
+
+  if (ble_take_ui_dirty()) {
+    redrawCurrentScreen();
+  }
+}
+
+// ---------------- Serial command handler ----------------
+bool check_serial_trigger() {
+  bool triggered = false;
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == 'm' || c == 'M' || c == '\n' || c == '\r') {
+      triggered = true;
+    }
+  }
+  return triggered;
+}
+
+// ---------------- Measurement ----------------
+bool take_measurements_and_compute_ndvi() {
+  if (!up_ok || !down_ok) return false;
+
+  drawMeasuringScreen(1, 1);
+
+  sensor_UP.takeMeasurements();
+  uint16_t iU_raw = sensor_UP.getI();
+  uint16_t vU_raw = sensor_UP.getV();
+
+  sensor_DOWN.takeMeasurements();
+  uint16_t iD_raw = sensor_DOWN.getI();
+  uint16_t vD_raw = sensor_DOWN.getV();
+
+  last_raw_iU = iU_raw;
+  last_raw_vU = vU_raw;
+  last_raw_iD = iD_raw;
+  last_raw_vD = vD_raw;
+  last_red_UP = (float)iU_raw;
+  last_nir_UP = (float)vU_raw;
+
+  float iU = (float)iU_raw;
+  float vU = (float)vU_raw;
+  float iD = (float)iD_raw;
+  float vD = (float)vD_raw;
+
+  float red_refl = (iU > 0.0f) ? (iD / iU) : 0.0f;
+  float nir_refl = (vU > 0.0f) ? (vD / vU) : 0.0f;
+
+  float denom = nir_refl + red_refl;
+  ndvi = (denom > 0.0f) ? ((nir_refl - red_refl) / denom) : 0.0f;
+
+  message_NDVI = String(ndvi, 3);
+  measurement_sequence++;
+  last_measurement_ms = millis();
+
+  battery_soc = read_voltage_percent();
+  updateBLEStatusValue();
+
+  printAllChannels("UP raw:", sensor_UP);
+  Serial.println("------------------------------------");
+  printAllChannels("DOWN raw:", sensor_DOWN);
+
+  return true;
+}
+
+// ================= SETUP & LOOP =================
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Manti NDVI meter ready. Send 'm' to measure.");
+
+  WiFi.mode(WIFI_OFF);
+
+  ble_mutex = xSemaphoreCreateMutex();
+
+  pinMode(BTN_MEASURE, INPUT_PULLUP);
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
+
+  configure_batt();
+  battery_soc = read_voltage_percent();
+
+  tft.init(SCREEN_WIDTH, SCREEN_HEIGHT);
+  tft.setRotation(2);
+  tft.fillScreen(BLACK);
+
+  setupBLE();
+  i2c_init_buses_once();
+
+  up_ok   = try_init_up_sensor();
+  down_ok = try_init_down_sensor();
+  updateBLEStatusValue();
+
+  drawStatusScreen();
+}
+
+void loop() {
+  serviceBLE();
+  retry_sensor_init_periodic();
+
+  unsigned long now = millis();
+  if (now - last_batt_sample_ms >= BATT_SAMPLE_PERIOD_MS) {
+    last_batt_sample_ms = now;
+    battery_soc = read_voltage_percent();
+  }
+
+  bool btn_now       = (digitalRead(BTN_MEASURE) == LOW);
+  bool button_trigger = (!lastMeasureState && btn_now);
+  bool serial_trigger = check_serial_trigger();
+  lastMeasureState    = btn_now;
+
+  if (button_trigger || serial_trigger) {
+    if (serial_trigger) Serial.println(">> Serial trigger received.");
+
+    up_ok   = false;
+    down_ok = false;
+    up_ok   = try_init_up_sensor();
+    down_ok = try_init_down_sensor();
+    updateBLEStatusValue();
+
+    if (take_measurements_and_compute_ndvi()) {
+      drawNDVIScreen();
+    } else {
+      drawStatusScreen();
+    }
+  }
+
+  delay(20);
+}
