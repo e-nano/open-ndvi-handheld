@@ -183,7 +183,8 @@ h3 {
 }
 
 h1,
-h2 {
+h2,
+h3 {
   font-family: var(--font-display);
 }
 
@@ -200,7 +201,13 @@ h2 {
 
 h3 {
   margin-bottom: 0.6rem;
-  font-size: 1.08rem;
+  font-size: clamp(1.45rem, 2.4vw, 2rem);
+  letter-spacing: -0.01em;
+}
+
+h4 {
+  margin: 0 0 0.55rem;
+  font-size: 1.05rem;
   letter-spacing: -0.01em;
 }
 
@@ -286,6 +293,43 @@ li {
   margin-top: 1.75rem;
 }
 
+.content-group {
+  margin-top: 2.2rem;
+}
+
+.content-group-directory {
+  margin-top: 3.4rem;
+  padding-top: 2.4rem;
+  border-top: 1px solid rgba(2, 59, 15, 0.1);
+}
+
+.group-header {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.group-label {
+  margin: 0;
+  color: var(--quaternary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.group-title {
+  margin-bottom: 0.1rem;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+}
+
+.group-summary {
+  max-width: 44rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.07rem;
+}
+
 .panel {
   padding: 2.1rem;
   margin-top: 1.75rem;
@@ -307,6 +351,13 @@ li {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.4rem 1.6rem;
+}
+
+.feature-list > div {
+  padding: 1.15rem 1.2rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(2, 59, 15, 0.08);
 }
 
 ul,
@@ -392,6 +443,11 @@ a {
   .grid,
   .feature-list {
     grid-template-columns: 1fr;
+  }
+
+  .content-group-directory {
+    margin-top: 2.6rem;
+    padding-top: 1.8rem;
   }
 }
 

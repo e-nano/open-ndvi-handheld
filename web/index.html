@@ -53,117 +53,139 @@
         </aside>
       </section>
 
-      <section class="panel panel-highlight" id="overview">
-        <h2>What this project is</h2>
-        <p>
-          This repository contains a fully open hardware and software implementation
-          of a handheld NDVI measurement device.
-        </p>
-        <ul>
-          <li>Exposes how NDVI measurements are produced</li>
-          <li>Supports validation, comparison, and experimentation</li>
-          <li>Acts as a reusable building block for larger sensing systems</li>
-        </ul>
-      </section>
-
-      <section class="grid">
-        <article class="panel">
-          <h2>Why it exists</h2>
-          <p>
-            Many vegetation indices are treated as black boxes, which makes
-            validation, comparison, and integration difficult.
+      <section class="content-group content-group-explainer" id="overview">
+        <div class="group-header">
+          <p class="group-label">Project Explanation</p>
+          <h2 class="group-title">What this is and why it matters</h2>
+          <p class="group-summary">
+            These sections explain the purpose of the instrument, the problem it is
+            addressing, and the core NDVI concept behind the build.
           </p>
-          <p>
-            This project provides a transparent reference implementation with a known,
-            inspectable signal path.
-          </p>
-        </article>
-        <article class="panel">
-          <h2>What NDVI means</h2>
-          <p>
-            NDVI compares reflected red light and near-infrared light to estimate
-            vegetation health and density.
-          </p>
-          <ul>
-            <li>High NDVI: healthy, dense vegetation</li>
-            <li>Moderate NDVI: sparse or stressed vegetation</li>
-            <li>Low or negative NDVI: soil, hard surfaces, or water</li>
-          </ul>
-        </article>
-      </section>
-
-      <section class="panel" id="repository">
-        <h2>What you will find in this repository</h2>
-        <div class="feature-list">
-          <div>
-            <h3>Firmware</h3>
-            <p>Arduino-based ESP32 code, NDVI calculation logic, sensor setup, and data output.</p>
-          </div>
-          <div>
-            <h3>Hardware</h3>
-            <p>Full schematic and PCB design, manufacturing files, BOM, and modular carrier board architecture.</p>
-          </div>
-          <div>
-            <h3>Mechanical</h3>
-            <p>3D-printable enclosure files and assembly notes.</p>
-          </div>
-          <div>
-            <h3>Documentation</h3>
-            <p>Assembly guidance, wiring, NDVI theory, and troubleshooting notes.</p>
-          </div>
         </div>
-      </section>
 
-      <section class="grid">
-        <article class="panel">
-          <h2>Quick start</h2>
-          <ol>
-            <li>Order components and fabricate the carrier PCB.</li>
-            <li>Assemble the device using the wiring and assembly guides.</li>
-            <li>Program the firmware onto the ESP32 Feather.</li>
-            <li>Power the unit and begin taking NDVI measurements.</li>
-          </ol>
-        </article>
-        <article class="panel panel-accent">
-          <h2>Project intent</h2>
+        <section class="panel panel-highlight">
+          <h3>What this project is</h3>
           <p>
-            Built as a transparent reference instrument, this project prioritises
-            inspectability over black-box abstraction.
+            This repository contains a fully open hardware and software implementation
+            of a handheld NDVI measurement device.
           </p>
-          <a href="https://github.com/e-nano/open-ndvi-handheld" class="text-link">Explore the full repository</a>
-        </article>
-      </section>
-
-      <section class="grid">
-        <article class="panel">
-          <h2>Design philosophy</h2>
           <ul>
-            <li>Transparency over optimisation</li>
-            <li>Reference instrument, not product</li>
-            <li>Interoperable structured output</li>
-            <li>Modular firmware, hardware, and enclosure</li>
+            <li>Exposes how NDVI measurements are produced</li>
+            <li>Supports validation, comparison, and experimentation</li>
+            <li>Acts as a reusable building block for larger sensing systems</li>
           </ul>
-        </article>
-        <article class="panel" id="docs">
-          <h2>Documentation</h2>
-          <ul class="link-list">
-            <li><a href="./docs/assembly_guide.html">Assembly Guide</a></li>
-            <li><a href="./docs/wiring_and_pinout.html">Wiring and Pinout</a></li>
-            <li><a href="./docs/ndvi_theory.html">NDVI Theory</a></li>
-            <li><a href="./docs/faq.html">FAQ</a></li>
-          </ul>
-        </article>
+        </section>
+
+        <section class="grid">
+          <article class="panel">
+            <h3>Why it exists</h3>
+            <p>
+              Many vegetation indices are treated as black boxes, which makes
+              validation, comparison, and integration difficult.
+            </p>
+            <p>
+              This project provides a transparent reference implementation with a known,
+              inspectable signal path.
+            </p>
+          </article>
+          <article class="panel">
+            <h3>What NDVI means</h3>
+            <p>
+              NDVI compares reflected red light and near-infrared light to estimate
+              vegetation health and density.
+            </p>
+            <ul>
+              <li>High NDVI: healthy, dense vegetation</li>
+              <li>Moderate NDVI: sparse or stressed vegetation</li>
+              <li>Low or negative NDVI: soil, hard surfaces, or water</li>
+            </ul>
+          </article>
+        </section>
       </section>
 
-      <section class="panel" id="licensing">
-        <h2>Licensing</h2>
-        <p>Different parts of the project use separate open licences.</p>
-        <ul>
-          <li>Firmware: MIT</li>
-          <li>Hardware: CERN OHL-W v2</li>
-          <li>Mechanical design: CC BY-SA 4.0</li>
-          <li>Documentation: CC BY 4.0</li>
-        </ul>
+      <section class="content-group content-group-directory" id="repository">
+        <div class="group-header">
+          <p class="group-label">Site Directory</p>
+          <h2 class="group-title">Where to go next</h2>
+          <p class="group-summary">
+            The sections below are the practical navigation layer for the project:
+            repository structure, build path, documentation, and licence scope.
+          </p>
+        </div>
+
+        <section class="panel">
+          <h3>What you will find in this repository</h3>
+          <div class="feature-list">
+            <div>
+              <h4>Firmware</h4>
+              <p>Arduino-based ESP32 code, NDVI calculation logic, sensor setup, and data output.</p>
+            </div>
+            <div>
+              <h4>Hardware</h4>
+              <p>Full schematic and PCB design, manufacturing files, BOM, and modular carrier board architecture.</p>
+            </div>
+            <div>
+              <h4>Mechanical</h4>
+              <p>3D-printable enclosure files and assembly notes.</p>
+            </div>
+            <div>
+              <h4>Documentation</h4>
+              <p>Assembly guidance, wiring, NDVI theory, and troubleshooting notes.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="grid">
+          <article class="panel">
+            <h3>Quick start</h3>
+            <ol>
+              <li>Order components and fabricate the carrier PCB.</li>
+              <li>Assemble the device using the wiring and assembly guides.</li>
+              <li>Program the firmware onto the ESP32 Feather.</li>
+              <li>Power the unit and begin taking NDVI measurements.</li>
+            </ol>
+          </article>
+          <article class="panel panel-accent">
+            <h3>Project intent</h3>
+            <p>
+              Built as a transparent reference instrument, this project prioritises
+              inspectability over black-box abstraction.
+            </p>
+            <a href="https://github.com/e-nano/open-ndvi-handheld" class="text-link">Explore the full repository</a>
+          </article>
+        </section>
+
+        <section class="grid">
+          <article class="panel">
+            <h3>Design philosophy</h3>
+            <ul>
+              <li>Transparency over optimisation</li>
+              <li>Reference instrument, not product</li>
+              <li>Interoperable structured output</li>
+              <li>Modular firmware, hardware, and enclosure</li>
+            </ul>
+          </article>
+          <article class="panel" id="docs">
+            <h3>Documentation</h3>
+            <ul class="link-list">
+              <li><a href="./docs/assembly_guide.html">Assembly Guide</a></li>
+              <li><a href="./docs/wiring_and_pinout.html">Wiring and Pinout</a></li>
+              <li><a href="./docs/ndvi_theory.html">NDVI Theory</a></li>
+              <li><a href="./docs/faq.html">FAQ</a></li>
+            </ul>
+          </article>
+        </section>
+
+        <section class="panel" id="licensing">
+          <h3>Licensing</h3>
+          <p>Different parts of the project use separate open licences.</p>
+          <ul>
+            <li>Firmware: MIT</li>
+            <li>Hardware: CERN OHL-W v2</li>
+            <li>Mechanical design: CC BY-SA 4.0</li>
+            <li>Documentation: CC BY 4.0</li>
+          </ul>
+        </section>
       </section>
     </main>
   </body>
