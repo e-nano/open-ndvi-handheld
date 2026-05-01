@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FAQ | Open NDVI Handheld</title>
+    <meta
+      name="description"
+      content="Frequently asked questions for the Open NDVI Handheld project."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav-shell">
+        <a href="../index.html" class="brand-mark">Open NDVI</a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="../index.html#overview">Overview</a>
+          <a href="../index.html#repository">Repository</a>
+          <a href="../index.html#docs" class="is-active">Docs</a>
+          <a href="../index.html#licensing">Licensing</a>
+        </nav>
+        <a href="https://github.com/e-nano/open-ndvi-handheld" class="nav-cta">GitHub</a>
+      </div>
+    </header>
+    <main class="page page-doc">
+      <section class="hero doc-hero">
+        <p class="eyebrow">Support Notes</p>
+        <h1>Frequently Asked Questions</h1>
+        <p class="doc-summary">
+          Practical answers about the build intent, firmware status, measurements,
+          and what this project does and does not claim.
+        </p>
+        <div class="doc-meta">
+          <span class="meta-pill">Reference instrument scope</span>
+          <span class="meta-pill">Build and usage notes</span>
+          <span class="meta-pill">Measurement caveats</span>
+        </div>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">FAQ</p>
+        <h2>Common questions</h2>
+        <h3>Is this a commercial product?</h3>
+        <p>
+          No. The repository presents a transparent reference instrument intended for
+          learning, validation, experimentation, and integration work.
+        </p>
+
+        <h3>Does it replace certified agronomic tools?</h3>
+        <p>
+          No. It is not positioned as a certified measurement device and should not
+          be treated as the sole basis for agronomic or environmental decisions.
+        </p>
+
+        <h3>Why are there two AS7265x sensors?</h3>
+        <p>
+          One sensor measures incident light and one measures reflected light. That
+          arrangement improves repeatability when ambient outdoor lighting changes.
+        </p>
+
+        <h3>What does the display show?</h3>
+        <p>
+          The intended interface shows a large NDVI value, battery percentage, and a
+          low-light warning when the signal is too weak for a confident reading.
+        </p>
+
+        <h3>Which firmware should be treated as current?</h3>
+        <p>
+          The active ESP32 project is the PlatformIO layout in `firmware/src/`. The
+          older `.ino` sketch is still present as a reference artifact.
+        </p>
+
+        <h3>Does the project include proprietary E-Nano pipelines?</h3>
+        <p>
+          No. Controlled calibration workflows, QA systems, and proprietary analysis
+          layers are outside the scope of this open repository.
+        </p>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Build</p>
+          <h2>Setup questions</h2>
+          <ul>
+            <li>Use the custom carrier PCB rather than assuming generic breadboard wiring.</li>
+            <li>Review the hardware PDFs and BOM before ordering parts.</li>
+            <li>Use the local patched AS7265X library included in `firmware/lib/`.</li>
+          </ul>
+        </article>
+        <article class="panel doc-panel panel-accent">
+          <p class="doc-kicker">Measurements</p>
+          <h2>Interpretation questions</h2>
+          <ul>
+            <li>NDVI is context-sensitive and not a diagnosis by itself.</li>
+            <li>Mixed soil, shadows, and directional lighting can distort readings.</li>
+            <li>Repeatability improves when both sensors are functioning correctly.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Next</p>
+        <h2>Useful follow-on pages</h2>
+        <div class="doc-nav">
+          <a href="../index.html">Back to home</a>
+          <a href="./assembly_guide.html">Assembly guide</a>
+          <a href="./wiring_and_pinout.html">Wiring and pinout</a>
+          <a href="./ndvi_theory.html">NDVI theory</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

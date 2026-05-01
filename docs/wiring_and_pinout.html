@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wiring and Pinout | Open NDVI Handheld</title>
+    <meta
+      name="description"
+      content="Pin mapping and wiring summary for the Open NDVI Handheld."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav-shell">
+        <a href="../index.html" class="brand-mark">Open NDVI</a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="../index.html#overview">Overview</a>
+          <a href="../index.html#repository">Repository</a>
+          <a href="../index.html#docs" class="is-active">Docs</a>
+          <a href="../index.html#licensing">Licensing</a>
+        </nav>
+        <a href="https://github.com/e-nano/open-ndvi-handheld" class="nav-cta">GitHub</a>
+      </div>
+    </header>
+    <main class="page page-doc">
+      <section class="hero doc-hero">
+        <p class="eyebrow">Electrical Reference</p>
+        <h1>Wiring and Pinout</h1>
+        <p class="doc-summary">
+          The current firmware uses two I2C buses, one SPI display connection, a
+          dedicated measure button, display backlight control, and battery sensing.
+        </p>
+        <div class="doc-meta">
+          <span class="meta-pill">Dual I2C buses</span>
+          <span class="meta-pill">SPI display interface</span>
+          <span class="meta-pill">ESP32 Feather V2 target</span>
+        </div>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Firmware mapping</p>
+        <h2>Pin summary from the active ESP32 firmware</h2>
+        <div class="doc-table-wrap">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th>Function</th>
+                <th>Firmware symbol</th>
+                <th>Pin</th>
+                <th>Use</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>DOWN sensor SDA</td>
+                <td>`I2C1_SDA_PIN`</td>
+                <td>`33`</td>
+                <td>Custom I2C bus for reflected-light sensor</td>
+              </tr>
+              <tr>
+                <td>DOWN sensor SCL</td>
+                <td>`I2C1_SCL_PIN`</td>
+                <td>`13`</td>
+                <td>Custom I2C bus clock for reflected-light sensor</td>
+              </tr>
+              <tr>
+                <td>UP sensor SDA</td>
+                <td>`I2C2_SDA_PIN`</td>
+                <td>`SDA`</td>
+                <td>Default I2C bus for incident-light sensor</td>
+              </tr>
+              <tr>
+                <td>UP sensor SCL</td>
+                <td>`I2C2_SCL_PIN`</td>
+                <td>`SCL`</td>
+                <td>Default I2C bus clock for incident-light sensor</td>
+              </tr>
+              <tr>
+                <td>Display chip select</td>
+                <td>`TFT_CS`</td>
+                <td>`A0`</td>
+                <td>ST7789 SPI chip select</td>
+              </tr>
+              <tr>
+                <td>Display data/command</td>
+                <td>`TFT_DC`</td>
+                <td>`A1`</td>
+                <td>ST7789 command/data select</td>
+              </tr>
+              <tr>
+                <td>Display reset</td>
+                <td>`TFT_RST`</td>
+                <td>`-1`</td>
+                <td>No dedicated reset line in the active firmware</td>
+              </tr>
+              <tr>
+                <td>Display backlight</td>
+                <td>`TFT_BL`</td>
+                <td>`A5`</td>
+                <td>Backlight enable control</td>
+              </tr>
+              <tr>
+                <td>Measure button</td>
+                <td>`BTN_MEASURE`</td>
+                <td>`A2`</td>
+                <td>Manual reading trigger</td>
+              </tr>
+              <tr>
+                <td>Battery monitor</td>
+                <td>`BATT`</td>
+                <td>`A3`</td>
+                <td>ADC battery sense input</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Sensors</p>
+          <h2>Why two I2C buses are used</h2>
+          <p>
+            The firmware treats the upward-facing and downward-facing AS7265x
+            modules as separate buses. That avoids address conflicts and supports the
+            dual-sensor incident-versus-reflected measurement approach.
+          </p>
+          <ul>
+            <li>UP sensor: ambient or incident illumination</li>
+            <li>DOWN sensor: reflected signal from the target surface</li>
+          </ul>
+        </article>
+        <article class="panel doc-panel panel-accent">
+          <p class="doc-kicker">Display</p>
+          <h2>Display integration</h2>
+          <p>
+            The interface is built around a 240x240 ST7789 screen. The active
+            firmware controls the backlight separately and expects a no-reset
+            configuration.
+          </p>
+          <pre class="doc-code"><code>TFT_CS  = A0
+TFT_DC  = A1
+TFT_RST = -1
+TFT_BL  = A5</code></pre>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">System notes</p>
+        <h2>Additional interface details</h2>
+        <ul>
+          <li>The active BLE advertising name in firmware is `Manti-S-00001`.</li>
+          <li>The measure button and battery ADC live on analog-capable Feather pins.</li>
+          <li>The wiring should follow the carrier PCB rather than freehand prototyping assumptions.</li>
+          <li>Always cross-check this page against the board files in `hardware/fusion_eagle/`.</li>
+        </ul>
+        <div class="doc-notice">
+          The pin mapping on this page reflects the current `firmware/src/main.cpp`
+          that was copied into the repository. If firmware pin definitions change,
+          this page should change with them.
+        </div>
+        <div class="doc-nav">
+          <a href="../index.html">Back to home</a>
+          <a href="./assembly_guide.html">Open assembly guide</a>
+          <a href="./faq.html">Open FAQ</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

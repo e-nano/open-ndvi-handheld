@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Assembly Guide | Open NDVI Handheld</title>
+    <meta
+      name="description"
+      content="Assembly guide for the Open NDVI Handheld reference instrument."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav-shell">
+        <a href="../index.html" class="brand-mark">Open NDVI</a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="../index.html#overview">Overview</a>
+          <a href="../index.html#repository">Repository</a>
+          <a href="../index.html#docs" class="is-active">Docs</a>
+          <a href="../index.html#licensing">Licensing</a>
+        </nav>
+        <a href="https://github.com/e-nano/open-ndvi-handheld" class="nav-cta">GitHub</a>
+      </div>
+    </header>
+    <main class="page page-doc">
+      <section class="hero doc-hero">
+        <p class="eyebrow">Build Guide</p>
+        <h1>Assembly Guide</h1>
+        <p class="doc-summary">
+          A concise build flow for the carrier PCB, dual AS7265x sensors, display,
+          controls, battery, and enclosure.
+        </p>
+        <div class="doc-meta">
+          <span class="meta-pill">Carrier PCB architecture</span>
+          <span class="meta-pill">Dual-sensor handheld build</span>
+          <span class="meta-pill">Reference documentation</span>
+        </div>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Overview</p>
+        <h2>What this build includes</h2>
+        <p>
+          The Open NDVI Handheld uses a modular assembly approach. A custom carrier
+          PCB hosts the ESP32 Feather V2, two AS7265x Triad sensors, an ST7789 LCD,
+          the measurement button, power switch, and the battery connection.
+        </p>
+        <div class="doc-nav">
+          <a href="./wiring_and_pinout.html">View wiring and pinout</a>
+          <a href="./faq.html">Read troubleshooting FAQ</a>
+        </div>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Parts</p>
+          <h2>Required components</h2>
+          <ul class="card-list">
+            <li>Adafruit ESP32 Feather V2</li>
+            <li>2x SparkFun AS7265x Triad spectral sensors</li>
+            <li>Pimoroni 1.3" 240x240 SPI LCD with ST7789 controller</li>
+            <li>Single-cell LiPo battery</li>
+            <li>Custom carrier PCB</li>
+            <li>Power switch and momentary measurement button</li>
+            <li>Headers, connectors, and 3D printed enclosure parts</li>
+          </ul>
+        </article>
+        <article class="panel doc-panel panel-accent">
+          <p class="doc-kicker">Preparation</p>
+          <h2>Before assembly</h2>
+          <ul>
+            <li>Fabricate the carrier PCB from the Gerbers in `hardware/gerbers/`.</li>
+            <li>Review `hardware/outputs/pcb_top.pdf` and `pcb_bottom.pdf`.</li>
+            <li>Print the enclosure parts from `mechanical/` if you want a full housing.</li>
+            <li>Confirm the firmware target is the ESP32 Feather V2 project in `firmware/src/`.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Sequence</p>
+        <h2>Recommended assembly order</h2>
+        <ol>
+          <li>Install headers and board-to-board connectors on the carrier PCB.</li>
+          <li>Mount the ESP32 Feather V2 to the carrier board.</li>
+          <li>Mount and connect the upward-facing AS7265x sensor for incident light measurement.</li>
+          <li>Mount and connect the downward-facing AS7265x sensor for reflected light measurement.</li>
+          <li>Connect the ST7789 display over SPI.</li>
+          <li>Wire the power switch and the measurement button.</li>
+          <li>Connect the LiPo battery and verify battery monitor routing.</li>
+          <li>Test power, display, both I2C buses, and the button before closing the enclosure.</li>
+          <li>Install the assembled electronics into the printed enclosure.</li>
+        </ol>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Checks</p>
+          <h2>Bring-up checklist</h2>
+          <ul>
+            <li>ESP32 powers and enumerates over USB.</li>
+            <li>Display backlight turns on.</li>
+            <li>Both sensors initialise without bus collisions.</li>
+            <li>Battery percentage appears on-screen.</li>
+            <li>Measurement button triggers a reading.</li>
+          </ul>
+        </article>
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Notes</p>
+          <h2>Assembly intent</h2>
+          <ul>
+            <li>The project is modular by design, so component replacement is straightforward.</li>
+            <li>The dual-sensor layout is central to the incident/reflected light workflow.</li>
+            <li>Use the wiring page for the actual pin mapping before soldering permanent connections.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Next</p>
+        <h2>After physical assembly</h2>
+        <p>
+          Once the hardware is assembled, program the Feather with the PlatformIO
+          project in `firmware/`, then verify the display, sensor readings, battery
+          sampling, and BLE status behaviour.
+        </p>
+        <div class="doc-nav">
+          <a href="../index.html">Back to home</a>
+          <a href="./wiring_and_pinout.html">Open wiring guide</a>
+          <a href="./ndvi_theory.html">Read NDVI theory</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
