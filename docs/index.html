@@ -8,24 +8,52 @@
       name="description"
       content="Open-source handheld NDVI instrument based on the ESP32 Feather V2 and AS7265x Triad sensors."
     />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <header class="site-header">
+      <div class="nav-shell">
+        <a href="#top" class="brand-mark">Open NDVI</a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="#overview">Overview</a>
+          <a href="#repository">Repository</a>
+          <a href="#docs">Docs</a>
+          <a href="#licensing">Licensing</a>
+        </nav>
+        <a href="https://github.com/e-nano/open-ndvi-handheld" class="nav-cta">GitHub</a>
+      </div>
+    </header>
     <main class="page">
-      <section class="hero">
-        <p class="eyebrow">Open hardware. Open firmware. Open methodology.</p>
-        <h1>Open NDVI Handheld</h1>
-        <p class="lede">
-          A reference open-source handheld NDVI instrument for vegetation sensing,
-          validation, experimentation, and system integration.
-        </p>
-        <div class="actions">
-          <a href="https://github.com/e-nano/open-ndvi-handheld" class="button button-primary">View Repository</a>
-          <a href="#docs" class="button button-secondary">Browse Docs</a>
+      <section class="hero" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">Open hardware. Open firmware. Open methodology.</p>
+          <h1>Automating data for transparent vegetation sensing.</h1>
+          <p class="lede">
+            Open NDVI Handheld is a reference open-source instrument for field
+            validation, experimentation, and system integration.
+          </p>
+          <div class="actions">
+            <a href="https://github.com/e-nano/open-ndvi-handheld" class="button button-primary">View Repository</a>
+            <a href="#docs" class="button button-secondary">Browse Docs</a>
+          </div>
         </div>
+        <aside class="hero-card" aria-label="Project summary">
+          <p class="hero-card-label">Reference system</p>
+          <ul class="hero-points">
+            <li>ESP32 Feather V2 firmware stack</li>
+            <li>AS7265x spectral sensing hardware</li>
+            <li>Open PCB, enclosure, and wiring docs</li>
+          </ul>
+        </aside>
       </section>
 
-      <section class="panel">
+      <section class="panel panel-highlight" id="overview">
         <h2>What this project is</h2>
         <p>
           This repository contains a fully open hardware and software implementation
@@ -64,7 +92,7 @@
         </article>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="repository">
         <h2>What you will find in this repository</h2>
         <div class="feature-list">
           <div>
@@ -86,14 +114,24 @@
         </div>
       </section>
 
-      <section class="panel">
-        <h2>Quick start</h2>
-        <ol>
-          <li>Order components and fabricate the carrier PCB.</li>
-          <li>Assemble the device using the wiring and assembly guides.</li>
-          <li>Program the firmware onto the ESP32 Feather.</li>
-          <li>Power the unit and begin taking NDVI measurements.</li>
-        </ol>
+      <section class="grid">
+        <article class="panel">
+          <h2>Quick start</h2>
+          <ol>
+            <li>Order components and fabricate the carrier PCB.</li>
+            <li>Assemble the device using the wiring and assembly guides.</li>
+            <li>Program the firmware onto the ESP32 Feather.</li>
+            <li>Power the unit and begin taking NDVI measurements.</li>
+          </ol>
+        </article>
+        <article class="panel panel-accent">
+          <h2>Project intent</h2>
+          <p>
+            Built as a transparent reference instrument, this project prioritises
+            inspectability over black-box abstraction.
+          </p>
+          <a href="https://github.com/e-nano/open-ndvi-handheld" class="text-link">Explore the full repository</a>
+        </article>
       </section>
 
       <section class="grid">
@@ -117,7 +155,7 @@
         </article>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="licensing">
         <h2>Licensing</h2>
         <p>Different parts of the project use separate open licences.</p>
         <ul>
