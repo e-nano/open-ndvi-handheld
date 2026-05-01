@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NDVI Theory | Open NDVI Handheld</title>
+    <meta
+      name="description"
+      content="Explanation of NDVI measurement principles for the Open NDVI Handheld."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav-shell">
+        <a href="../index.html" class="brand-mark">Open NDVI</a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="../index.html#overview">Overview</a>
+          <a href="../index.html#repository">Repository</a>
+          <a href="../index.html#docs" class="is-active">Docs</a>
+          <a href="../index.html#licensing">Licensing</a>
+        </nav>
+        <a href="https://github.com/e-nano/open-ndvi-handheld" class="nav-cta">GitHub</a>
+      </div>
+    </header>
+    <main class="page page-doc">
+      <section class="hero doc-hero">
+        <p class="eyebrow">Measurement Principles</p>
+        <h1>NDVI Theory</h1>
+        <p class="doc-summary">
+          NDVI is not measured directly. It is computed from red and near-infrared
+          reflectance behaviour, with this device using a dual-sensor design to
+          improve interpretation under changing outdoor light.
+        </p>
+        <div class="doc-meta">
+          <span class="meta-pill">RED and NIR band logic</span>
+          <span class="meta-pill">Incident light normalisation</span>
+          <span class="meta-pill">Reference instrument framing</span>
+        </div>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Definition</p>
+          <h2>What NDVI is</h2>
+          <p>
+            NDVI relates plant condition to how vegetation interacts with light.
+            Healthy vegetation tends to absorb red light for photosynthesis while
+            reflecting more near-infrared light from internal leaf structure.
+          </p>
+          <pre class="doc-code"><code>NDVI = (NIR - RED) / (NIR + RED)</code></pre>
+        </article>
+        <article class="panel doc-panel panel-accent">
+          <p class="doc-kicker">Interpretation</p>
+          <h2>Typical value ranges</h2>
+          <ul class="card-list">
+            <li><strong>0.5 to 0.9</strong>: dense, healthy vegetation</li>
+            <li><strong>0.2 to 0.5</strong>: sparse, stressed, or partially senescent vegetation</li>
+            <li><strong>0.0 to 0.2</strong>: very sparse vegetation or mixed soil/background</li>
+            <li><strong>Below 0.0</strong>: soil, concrete, water, or other non-vegetated surfaces</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Measurement model</p>
+        <h2>What this device actually measures</h2>
+        <p>
+          The device measures spectral intensity in discrete wavelength bands using
+          photodiode-based spectral sensors. NDVI is then derived from selected
+          bands representing red and near-infrared response.
+        </p>
+        <ul>
+          <li>Measurements are relative reflected light intensities.</li>
+          <li>The system is not claiming absolute radiometric calibration.</li>
+          <li>The firmware documents the exact band selection used for NDVI calculation.</li>
+        </ul>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Why two sensors</p>
+          <h2>Incident and reflected light</h2>
+          <p>
+            Outdoor illumination is unstable. Cloud cover, solar angle, shadows, and
+            atmosphere all change the available light. A single downward-looking
+            sensor would mix vegetation response with changing illumination.
+          </p>
+          <ul>
+            <li>UP sensor: measures incident light illuminating the scene</li>
+            <li>DOWN sensor: measures reflected light from the target surface</li>
+          </ul>
+        </article>
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Benefit</p>
+          <h2>Why the ratio matters</h2>
+          <p>
+            Measuring both incident and reflected light improves repeatability and
+            short-term comparability by normalising the vegetation signal against the
+            illumination conditions at the moment of capture.
+          </p>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Limits</p>
+        <h2>Assumptions and constraints</h2>
+        <ul>
+          <li>Illumination should be reasonably uniform across the field of view.</li>
+          <li>The measured area should mostly contain the intended surface.</li>
+          <li>Strong shadows, specular reflections, and mixed backgrounds reduce reliability.</li>
+          <li>The device is a transparent reference build, not a certified agronomic instrument.</li>
+        </ul>
+        <div class="doc-notice">
+          The purpose of this project is to expose the measurement chain, not to
+          hide it behind a single unexplained number.
+        </div>
+        <div class="doc-nav">
+          <a href="../index.html">Back to home</a>
+          <a href="./assembly_guide.html">Open assembly guide</a>
+          <a href="./faq.html">Read FAQ</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
