@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FAQ | Open NDVI Handheld</title>
+    <title>Manti.S Quickstart Guide | Open NDVI Handheld</title>
     <meta
       name="description"
-      content="Frequently asked questions for the Open NDVI Handheld project."
+      content="Quick start guide for the MANTI-S portable NDVI sensor."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -41,88 +41,84 @@
     </header>
     <main class="page page-doc">
       <section class="hero doc-hero">
-        <p class="eyebrow">Support Notes</p>
-        <h1>Frequently Asked Questions</h1>
+        <p class="eyebrow">User Guide</p>
+        <h1>Manti.S Quickstart Guide</h1>
         <p class="doc-summary">
-          Practical answers about the build intent, firmware status, measurements,
-          and what this project does and does not claim.
+          Thank you for purchasing the MANTI-S portable NDVI sensor. Each Manti-S
+          device is individually calibrated to produce standardised NDVI values.
         </p>
         <div class="doc-meta">
-          <span class="meta-pill">Reference instrument scope</span>
-          <span class="meta-pill">Build and usage notes</span>
-          <span class="meta-pill">Measurement caveats</span>
+          <span class="meta-pill">Portable NDVI sensor</span>
+          <span class="meta-pill">Standardised calibrated output</span>
+          <span class="meta-pill">Field-use handling guide</span>
         </div>
       </section>
 
       <section class="panel doc-panel">
-        <p class="doc-kicker">FAQ</p>
-        <h2>Common questions</h2>
-        <h3>Is this a commercial product?</h3>
-        <p>
-          No. The repository presents a transparent reference instrument intended for
-          learning, validation, experimentation, and integration work.
-        </p>
-
-        <h3>Does it replace certified agronomic tools?</h3>
-        <p>
-          No. It is not positioned as a certified measurement device and should not
-          be treated as the sole basis for agronomic or environmental decisions.
-        </p>
-
-        <h3>Why are there two AS7265x sensors?</h3>
-        <p>
-          One sensor measures incident light and one measures reflected light. That
-          arrangement improves repeatability when ambient outdoor lighting changes.
-        </p>
-
-        <h3>What does the display show?</h3>
-        <p>
-          The intended interface shows a large NDVI value, battery percentage, and a
-          low-light warning when the signal is too weak for a confident reading.
-        </p>
-
-        <h3>Which firmware should be treated as current?</h3>
-        <p>
-          The active ESP32 project is the PlatformIO layout in `firmware/src/`. The
-          older `.ino` sketch is still present as a reference artifact.
-        </p>
-
-        <h3>Does the project include proprietary E-Nano pipelines?</h3>
-        <p>
-          No. Controlled calibration workflows, QA systems, and proprietary analysis
-          layers are outside the scope of this open repository.
-        </p>
+        <p class="doc-kicker">Taking measurements</p>
+        <h2>Using the device</h2>
+        <ol>
+          <li>Hold the Manti.S over the area to be measured.</li>
+          <li>Press the trigger until a value for NDVI is displayed.</li>
+          <li>For best results, hold the device parallel to the ground when taking measurements.</li>
+          <li>Use the device during daylight hours.</li>
+          <li>Ensure that the white diffuser on the top of the device is clean of dirt and debris.</li>
+        </ol>
       </section>
 
-      <section class="doc-grid">
-        <article class="panel doc-panel">
-          <p class="doc-kicker">Build</p>
-          <h2>Setup questions</h2>
-          <ul>
-            <li>Use the custom carrier PCB rather than assuming generic breadboard wiring.</li>
-            <li>Review the hardware PDFs and BOM before ordering parts.</li>
-            <li>Use the local patched AS7265X library included in `firmware/lib/`.</li>
-          </ul>
-        </article>
-        <article class="panel doc-panel panel-accent">
-          <p class="doc-kicker">Measurements</p>
-          <h2>Interpretation questions</h2>
-          <ul>
-            <li>NDVI is context-sensitive and not a diagnosis by itself.</li>
-            <li>Mixed soil, shadows, and directional lighting can distort readings.</li>
-            <li>Repeatability improves when both sensors are functioning correctly.</li>
-          </ul>
-        </article>
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Taking measurements</p>
+        <h2>Measurement Conditions</h2>
+        <div class="quickstart-gallery">
+          <figure>
+            <img
+              src="../assets/quickstart/light-good.png"
+              alt="Correct MANTI-S positioning over grass with a green check mark."
+            />
+          </figure>
+          <figure>
+            <img
+              src="../assets/quickstart/light-bad.png"
+              alt="Incorrect MANTI-S positioning with the device tilted and a red X."
+            />
+          </figure>
+          <figure>
+            <img
+              src="../assets/quickstart/dimensions.png"
+              alt="MANTI-S shown above grass with a suggested measurement height of 0.85m and footprint width of 0.15m."
+            />
+          </figure>
+        </div>
+      </section>
+
+      <section class="panel doc-panel panel-accent">
+        <p class="doc-kicker">Things that affect your values</p>
+        <h2>Differing sensor light conditions</h2>
+        <p>
+          The Manti.S uses a matched pair of sensors to calculate NDVI. This
+          means the white diffuser on the top of the device must be in the same
+          light conditions as the area being measured, otherwise values will be
+          skewed.
+        </p>
+        <h2>Wet ground</h2>
+        <p>
+          Ratios of IR and red light from wet soil can inflate measurements.
+        </p>
+        <h2>Low light</h2>
+        <p>
+          When the device indicates "low light" it is sensing weak signals from
+          the bottom sensor and measurements may be partially less accurate.
+        </p>
       </section>
 
       <section class="panel doc-panel">
         <p class="doc-kicker">Next</p>
-        <h2>Useful follow-on pages</h2>
+        <h2>Related pages</h2>
         <div class="doc-nav">
           <a href="../index.html">Back to home</a>
           <a href="./assembly_guide.html">Assembly guide</a>
           <a href="./wiring_and_pinout.html">Wiring and pinout</a>
-          <a href="./ndvi_theory.html">NDVI theory</a>
+          <a href="./faq.html">FAQ</a>
         </div>
       </section>
     </main>

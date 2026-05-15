@@ -130,6 +130,12 @@ body {
   color: var(--primary);
 }
 
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
 .nav-cta {
   display: inline-flex;
   align-items: center;
@@ -592,6 +598,25 @@ li {
   padding: 2.2rem 2.3rem;
 }
 
+.quickstart-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.quickstart-gallery figure {
+  margin: 0;
+  display: grid;
+  place-items: center;
+}
+
+.quickstart-gallery img {
+  display: block;
+  width: min(100%, 220px);
+  height: auto;
+}
+
 .doc-panel + .doc-panel,
 .doc-grid,
 .doc-notice {
@@ -645,6 +670,10 @@ li {
     flex-wrap: wrap;
   }
 
+  .nav-actions {
+    margin-left: auto;
+  }
+
   .site-nav {
     order: 3;
     width: 100%;
@@ -668,6 +697,10 @@ li {
   .license-grid,
   .footer-directory,
   .hero-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .quickstart-gallery {
     grid-template-columns: 1fr;
   }
 
