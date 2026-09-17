@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Integration Time and BLE API | Open NDVI Handheld</title>
+    <meta
+      name="description"
+      content="Low-light integration profiles and BLE app integration reference for the Open NDVI Handheld."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav-shell">
+        <a href="../index.html#top" class="brand-mark" aria-label="Open NDVI home">
+          <img src="../assets/branding/layer1.png" alt="" class="brand-device" />
+          <span class="brand-copy"><strong>MANTI.S</strong><span>by e-nano</span></span>
+        </a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="../index.html#overview">Overview</a>
+          <a href="../index.html#repository">Contents</a>
+          <a href="../index.html#docs">Docs</a>
+          <a href="../index.html#licensing">Licensing</a>
+        </nav>
+        <a href="https://github.com/e-nano/open-ndvi-handheld" class="nav-cta">View Repository</a>
+      </div>
+    </header>
+
+    <main class="page page-doc">
+      <section class="hero doc-hero">
+        <p class="eyebrow">Developer reference</p>
+        <h1>Integration Time and BLE API</h1>
+        <p class="doc-summary">
+          How the active firmware adapts to low light, and how an external app
+          can read and validate its BLE status record.
+        </p>
+        <div class="doc-meta">
+          <span class="meta-pill">Three UP light levels</span>
+          <span class="meta-pill">Read and notify</span>
+          <span class="meta-pill">Text payload</span>
+        </div>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Low-light behaviour</p>
+        <h2>Three UP integration levels</h2>
+        <p>
+          Both sensors use 3.7x gain. One six-channel exposure takes approximately
+          <code>2 × 2.8 ms × (cycles + 1)</code> because two channel banks are converted.
+        </p>
+        <div class="doc-table-wrap">
+          <table class="doc-table">
+            <thead>
+              <tr><th>Level</th><th>Profile</th><th>Cycles</th><th>Exposures</th><th>Approx. integration</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td><code>up_100x1</code></td><td>100</td><td>1</td><td>566 ms</td></tr>
+              <tr><td>2</td><td><code>up_255x1</code></td><td>255</td><td>1</td><td>1.434 s</td></tr>
+              <tr><td>3</td><td><code>up_255x3</code></td><td>255</td><td>3, summed</td><td>4.301 s</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <ol>
+          <li>Capture level 1.</li>
+          <li>If dark-corrected 810 nm is below 75 counts, discard it and capture level 2.</li>
+          <li>If still below 75, discard it and capture level 3.</li>
+          <li>Calibrate and calculate NDVI using only the final profile.</li>
+        </ol>
+        <div class="doc-notice">
+          Level 3 adds three separate exposures; it does not average them. Each
+          profile therefore requires matching calibration and dark-offset data.
+        </div>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">DOWN sensor</p>
+          <h2>Independent escalation</h2>
+          <p>
+            DOWN starts with <code>down_255x1</code>. If dark-corrected 645 nm or
+            810 nm is below 75 counts, it discards that result and captures
+            <code>down_255x3</code>.
+          </p>
+          <ul>
+            <li>255 × 1: approximately 1.434 s</li>
+            <li>255 × 3 summed: approximately 4.301 s</li>
+            <li>Escalation depends on DOWN, not UP</li>
+          </ul>
+        </article>
+        <article class="panel doc-panel panel-accent">
+          <p class="doc-kicker">Result quality</p>
+          <h2>What LOW means</h2>
+          <p>
+            <code>LOW=1</code> means at least one sensor remains below threshold
+            after its final profile. NDVI is still calculated, but apps should
+            label or reject it as low confidence.
+          </p>
+          <p>
+            Retries are cumulative. Reaching the longest UP and DOWN profiles
+            requires about 12 seconds of sensor conversion time.
+          </p>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">BLE GATT</p>
+        <h2>Service discovery</h2>
+        <div class="doc-table-wrap">
+          <table class="doc-table">
+            <tbody>
+              <tr><th>Advertising name</th><td><code>Manti-S-00001</code></td></tr>
+              <tr><th>Service UUID</th><td><code>9f4a6d90-f740-4d10-a947-8c6c20f4f9d1</code></td></tr>
+              <tr><th>Status UUID</th><td><code>2d86686f-34f8-4f1b-a4ac-f127f90f7df0</code></td></tr>
+              <tr><th>Properties</th><td>Read, Notify</td></tr>
+              <tr><th>Encoding</th><td>UTF-8/ASCII text</td></tr>
+              <tr><th>Authentication</th><td>None</td></tr>
+              <tr><th>Write command</th><td>None</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Discover by service UUID; the default name may be shared by several
+          devices. A measurement must be started with the physical button or
+          <code>m</code> over 115200-baud USB serial. BLE exposes the latest status only.
+        </p>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Wire format</p>
+        <h2>Status payload</h2>
+        <pre class="doc-code"><code>NDVI=0.67,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,DX=1,SAT=0,CVM=31</code></pre>
+        <p>The record is comma-separated <code>KEY=VALUE</code> text with no newline.</p>
+        <div class="doc-table-wrap">
+          <table class="doc-table">
+            <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>NDVI</code></td><td>Latest result, two decimal places, -1.00 to 1.00</td></tr>
+              <tr><td><code>SEQ</code></td><td>Completed-measurement counter</td></tr>
+              <tr><td><code>MS</code></td><td>Device uptime in milliseconds at completion</td></tr>
+              <tr><td><code>BAT</code></td><td>Estimated battery percentage, 0 to 100</td></tr>
+              <tr><td><code>UP</code>, <code>DN</code></td><td>Sensor available when set to 1</td></tr>
+              <tr><td><code>LOW</code></td><td>Final signal remains below threshold</td></tr>
+              <tr><td><code>UI</code></td><td>Selected UP integration cycles: 100 or 255</td></tr>
+              <tr><td><code>UX</code></td><td>Selected UP exposure count: 1 or 3</td></tr>
+              <tr><td><code>DX</code></td><td>Selected DOWN exposure count: 1 or 3; cycles are always 255</td></tr>
+              <tr><td><code>SAT</code></td><td>Bit 0 = UP saturation; bit 1 = DOWN saturation</td></tr>
+              <tr><td><code>CVM</code></td><td>Calibration-valid profile bit mask</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <code>CVM</code> bits 0–4 map to <code>up_100x1</code>,
+          <code>up_255x1</code>, <code>up_255x3</code>, <code>down_255x1</code>,
+          and <code>down_255x3</code>. A value of 31 marks all profiles valid.
+        </p>
+      </section>
+
+      <section class="doc-grid">
+        <article class="panel doc-panel">
+          <p class="doc-kicker">App logic</p>
+          <h2>Accepting a reading</h2>
+          <ul>
+            <li>Require <code>SEQ &gt; 0</code> and a new sequence number.</li>
+            <li>Require <code>UP=1</code>, <code>DN=1</code>, and <code>LOW=0</code>.</li>
+            <li>Require selected profile bits in <code>CVM</code>.</li>
+            <li>Require relevant <code>SAT</code> bits to be clear.</li>
+            <li>Store the full payload with the NDVI result.</li>
+          </ul>
+        </article>
+        <article class="panel doc-panel">
+          <p class="doc-kicker">Connection flow</p>
+          <h2>Recommended sequence</h2>
+          <ol>
+            <li>Scan using the service UUID.</li>
+            <li>Connect and discover the status characteristic.</li>
+            <li>Read once for initial state.</li>
+            <li>Subscribe if the client supports notifications.</li>
+            <li>Require every field and de-duplicate using <code>SEQ</code>.</li>
+            <li>Repeat discovery after reconnecting.</li>
+          </ol>
+        </article>
+      </section>
+
+      <section class="panel doc-panel">
+        <p class="doc-kicker">Compatibility</p>
+        <h2>Use reads as the authoritative transport</h2>
+        <p>
+          The record exceeds the 20-byte value available with the default ATT
+          MTU. The current firmware does not explicitly request a larger local
+          MTU or add a Client Characteristic Configuration Descriptor. Notification
+          behaviour can therefore differ between BLE clients.
+        </p>
+        <ul>
+          <li>Use a characteristic read to obtain the full record.</li>
+          <li>If a notification is incomplete, discard it and perform a read.</li>
+          <li>Polling <code>SEQ</code> is the safest cross-platform fallback.</li>
+          <li>Ignore unknown keys, but require all documented keys.</li>
+        </ul>
+        <div class="doc-notice">
+          The status has no wall-clock timestamp, unique device ID, or protocol
+          version. Timestamp it in the app and associate it with the connected device.
+        </div>
+        <div class="doc-nav">
+          <a href="../index.html">Back to home</a>
+          <a href="./integration_and_ble.md">View full Markdown reference</a>
+          <a href="./wiring_and_pinout.html">Open wiring guide</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-shell">
+        <div class="footer-brand-block">
+          <a href="../index.html" class="footer-brand" aria-label="Open NDVI home">
+            <img src="../assets/branding/e-nano-logo.png" alt="e-nano" class="footer-logo" />
+            <span class="footer-brand-copy">
+              <strong>Open NDVI Handheld</strong>
+              <span>Open reference instrument for vegetation sensing.</span>
+            </span>
+          </a>
+        </div>
+        <div class="footer-directory" aria-label="Footer navigation">
+          <a href="../index.html#overview">Overview</a>
+          <a href="../index.html#repository">Repository</a>
+          <a href="../index.html#docs">Docs</a>
+          <a href="https://github.com/e-nano/open-ndvi-handheld">GitHub</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

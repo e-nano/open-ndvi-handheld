@@ -524,6 +524,7 @@ li {
 
 .page-doc {
   width: min(980px, calc(100% - 2rem));
+  margin: 0 auto;
 }
 
 .site-nav a.is-active {
@@ -638,6 +639,58 @@ li {
   color: var(--accent);
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+.doc-table-wrap {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+}
+
+.doc-table th,
+.doc-table td {
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.doc-table th {
+  background: var(--surface-subtle);
+  color: var(--primary);
+}
+
+.doc-code {
+  max-width: 100%;
+  margin: 1.25rem 0;
+  padding: 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.doc-notice {
+  padding: 1rem 1.1rem;
+  border-left: 4px solid var(--accent);
+  background: var(--surface-subtle);
+}
+
+.doc-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.doc-nav a {
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 
 @media (max-width: 900px) {

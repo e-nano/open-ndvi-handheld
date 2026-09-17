@@ -189,6 +189,7 @@ See the `LICENSES/` directory for full texts.
 
 ## Documentation
 
+- 📡 [Integration Time & BLE API](docs/integration_and_ble.md) - Low-light profiles and app integration protocol
 - 🔧 [Assembly Guide](docs/assembly_guide.md) - Detailed assembly instructions
 - 📐 [Wiring & Pinout](docs/wiring_and_pinout.md) - Technical connections
 - 🧪 [NDVI Theory](docs/ndvi_theory.md) - Scientific background
