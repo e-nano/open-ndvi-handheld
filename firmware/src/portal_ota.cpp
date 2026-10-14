@@ -136,6 +136,8 @@ void sendHome() {
   page += "<section class='panel'><div class='panel-head'><span class='step'>1</span>"
           "<h2>Connect to Wi-Fi</h2></div><p class='muted'>Choose a network with internet access. "
           "The device network stays available while you connect.</p>"
+          "<div class='actions'><form method='get' action='/'>"
+          "<button class='btn' type='submit'>Rescan networks</button></form></div>"
           "<form method='post' action='/connect'>"
           "<input type='hidden' name='token' value='" + formToken + "'>"
           "<div class='field'><label for='network'>Nearby networks</label>"

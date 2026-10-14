@@ -42,7 +42,8 @@
 - Only in setup mode, the screen shows the device Wi-Fi name, a fresh 8-character WPA2 password, and
   `http://192.168.4.1/`. Connect a phone to that network and open the address
   if the captive-portal popup does not appear.
-- The portal scans nearby networks. Credentials are saved in the default NVS
+- The portal scans nearby networks when opened or refreshed. Press **Rescan networks**
+  to refresh the list. Credentials are saved in the default NVS
   partition only after a successful connection. The device keeps its own Wi-Fi
   network active during setup, so the portal remains available. Press **Finish
   setup** in the portal or press the device button to close it. Serial
