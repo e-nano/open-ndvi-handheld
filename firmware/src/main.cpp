@@ -100,7 +100,7 @@ uint32_t buttonPressStartedAt = 0;
 
 static constexpr const char *CALIBRATION_FW_ID = "Manti-S-Cal";
 #ifndef MANTI_FIRMWARE_VERSION
-#define MANTI_FIRMWARE_VERSION "v0.3.1-dev1"
+#define MANTI_FIRMWARE_VERSION "v0.3.2-dev1"
 #endif
 static constexpr const char *FIRMWARE_VERSION = MANTI_FIRMWARE_VERSION;
 #ifndef MANTI_FIRMWARE_BUILD_DATE

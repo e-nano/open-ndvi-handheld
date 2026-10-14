@@ -281,8 +281,11 @@ void checkUpdate() {
     } else {
       int status = http.GET();
       int size = http.getSize();
-      if (status != 200 || size < 0 || size > 1024) {
-        message = "Update manifest unavailable.";
+      if (status != 200) {
+        message = "Manifest request failed (" + String(status) + ").";
+        Serial.printf("OTA manifest GET: %s\n", http.errorToString(status).c_str());
+      } else if (size < 0 || size > 1024) {
+        message = "Invalid manifest response size (" + String(size) + ").";
       } else {
         ReleaseInfo found;
         if (!parseManifest(http.getString(), found)) message = "Invalid update manifest.";

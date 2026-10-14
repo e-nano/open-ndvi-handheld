@@ -28,7 +28,10 @@ installation is started manually in its portal.
    measurement equivalence. If those areas changed, validate on one device and
    compare its calibration backup and post-update status before fleet use.
 4. Run `pio run` from `firmware/`, check `git diff --check`, and run relevant
-   checks for the changed code. Do not use full-chip erase during deployment.
+   checks for the changed code. Compare the live TLS chains for the GitHub
+   manifest and redirected release assets with `firmware/src/github_roots.h`;
+   a missing root makes the portal report a manifest request failure. Do not
+   use full-chip erase during deployment.
 5. Commit only the reviewed files. Push the commit to `origin/main` (or merge
    the reviewed branch into `main` and push). The release workflow must exist
    in the tagged commit. Never force-push or move an existing release tag.
