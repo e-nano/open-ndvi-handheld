@@ -6,9 +6,10 @@ This document describes the active PlatformIO firmware in
 
 ## Low-light measurement profiles
 
-Both AS7265x sensors run at 3.7x gain. The firmware adapts the upward-facing
-(`UP`) sensor through three profiles and uses two profiles for the
-downward-facing (`DOWN`) sensor.
+Both AS7265x sensors start each profile at 3.7x gain. If either NDVI band is
+low, firmware retries that profile at 16x before increasing integration. Each
+gain has a separate calibration table; no gain normalisation is applied.
+Uncalibrated 16x profiles are skipped.
 
 An AS7265x integration cycle is approximately 2.8 ms. Six-channel one-shot
 mode converts two banks, so one exposure takes approximately:
@@ -28,49 +29,76 @@ overhead add some delay.
 
 The adaptive UP sequence is:
 
-1. Capture `up_100x1`.
-2. If its dark-corrected 810 nm signal is below 75 raw counts, discard it and
-   capture `up_255x1`.
-3. If that result is still below 75 counts, discard it and capture
-   `up_255x3`.
-4. Use only the final selected profile for calibration and NDVI.
+1. Capture `up_100x1` at 3.7x, then at 16x if raw red or NIR is below 100.
+2. If still low, repeat that gain sequence for `up_255x1`.
+3. If still low, repeat it for `up_255x3`.
+4. Use only the final selected profile and gain for calibration and NDVI.
 
 Level 3 is three separate 255-cycle exposures added together. It is a sum, not
 an average. Each profile therefore has its own calibration and dark-offset
 data.
 
-The DOWN sensor always starts with `down_255x1`. If either its dark-corrected
-645 nm or 810 nm channel is below 75 counts, that reading is discarded and
-`down_255x3` is captured. DOWN escalation is based on the DOWN signal, not the
-UP result.
+The DOWN sensor starts with `down_255x1` at 3.7x, tries it at 16x if low, then
+does the same for `down_255x3` if needed. DOWN escalation is based on the DOWN
+signal, not the UP result. A saturated 16x result is not selected; firmware
+continues or falls back to the final profile at 3.7x.
 
 | DOWN profile | Cycles | Exposures | Approx. integration |
 |---|---:|---:|---:|
 | `down_255x1` | 255 | 1 | 1.434 s |
 | `down_255x3` | 255 | 3, summed | 4.301 s |
 
-Retries are cumulative. A measurement that reaches the longest UP and DOWN
-profiles takes about 12 seconds of sensor conversion time because the shorter
-attempts are captured first and discarded.
+Retries are cumulative. A measurement that tries every gain and profile takes
+about 24 seconds of sensor conversion time. Typical measurements stop earlier.
 
-`LOW=1` means that at least one sensor remains below its threshold after its
-final profile. The firmware still calculates NDVI, but an app should label or
-reject that result as low confidence.
+`LOW=1` means the final UP or DOWN profile has a direct raw I or V count below
+100. The firmware
+still calculates NDVI, but an app should label or reject that result as low
+confidence.
+
+Automatic 16x attempts can be disabled reversibly by setting
+`MANTI_ENABLE_16X_CALIBRATION=0` in `firmware/src/manti_features.h` and rebuilding.
+Stored 16x tables are retained.
+
+## Out-of-range UP calibration
+
+- Calibration factors interpolate inside measured ranges and clamp at their
+  endpoints; they are never extrapolated.
+- If both final UP I and V inputs are in the selected UP table range, the UP
+  table is used normally.
+- If either is outside, both measured UP channels are divided by their
+  characterised diffuser transmissions (`I=0.0470`, `V=0.0564`) and normalised
+  for integration cycles, exposure count, and gain.
+- Firmware then uses a valid same-gain DOWN table, preferring the same exposure
+  count and a profile that contains both converted inputs.
+- If no DOWN range contains both, the preferred DOWN table is endpoint-clamped.
+  If no compatible DOWN table is valid, the selected UP table is clamped.
+- USB serial status exposes `up_calibration_mode` and `up_transfer_profile`.
+- This calibrated calculation remains available as a USB serial diagnostic. The
+  displayed and BLE `NDVI` result uses the RAW+DF calculation described below.
+
+## Displayed NDVI calculation
+
+The displayed result and BLE `NDVI` field use the dark-corrected RAW+DF inputs.
+The UP inputs are divided by the characterised diffuser transmission and
+normalised to the selected DOWN integration, exposure, and gain profile. No
+channel calibration factor is applied. The four inputs are included in BLE as
+`RUI`, `RUV`, `RDI`, and `RDV`.
 
 ## BLE GATT interface
 
 | Item | Value |
 |---|---|
-| Advertising name | `Manti-S-00001` |
+| Advertising name | `Manti-S-<stored number>` after USB provisioning; otherwise `Manti-S-<factory MAC>` |
 | Service UUID | `9f4a6d90-f740-4d10-a947-8c6c20f4f9d1` |
 | Status characteristic UUID | `2d86686f-34f8-4f1b-a4ac-f127f90f7df0` |
-| Characteristic properties | Read, Notify |
+| Characteristic properties | Read, Notify (CCCD) |
 | Encoding | UTF-8/ASCII text |
 | Authentication | None |
 | Write or remote-measure command | None |
 
-Discover by service UUID rather than device name. The compiled name is not
-guaranteed to be unique if several devices use the default firmware.
+Discover by service UUID rather than device name. The device number is stored
+in NVS on its first USB-provisioned boot and survives later OTA updates.
 
 Measurements are started with the physical button or `m` over the 115200-baud
 USB serial connection. BLE only exposes the latest status. The device resumes
@@ -82,12 +110,16 @@ The characteristic contains one comma-separated record with `KEY=VALUE`
 fields and no newline:
 
 ```text
-NDVI=0.67,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,DX=1,SAT=0,CVM=31
+NDVI=0.67,RUI=845.20,RUV=1240.10,RDI=312.40,RDV=910.30,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,UG=16.00,DX=1,DG=16.00,SAT=0,CVM=1023
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `NDVI` | decimal | Latest NDVI, formatted to two decimal places and clamped to -1.00...1.00 |
+| `NDVI` | decimal | Latest RAW+DF NDVI, formatted to two decimal places and clamped to -1.00...1.00 |
+| `RUI` | decimal | Dark-corrected UP red channel I input used by RAW+DF NDVI |
+| `RUV` | decimal | Dark-corrected UP NIR channel V input used by RAW+DF NDVI |
+| `RDI` | decimal | Dark-corrected DOWN red channel I input used by RAW+DF NDVI |
+| `RDV` | decimal | Dark-corrected DOWN NIR channel V input used by RAW+DF NDVI |
 | `SEQ` | unsigned integer | Measurement counter; increments after each completed measurement |
 | `MS` | unsigned integer | Device uptime in milliseconds when that measurement completed |
 | `BAT` | integer | Estimated battery charge, 0...100 percent |
@@ -96,7 +128,9 @@ NDVI=0.67,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,DX=1,SAT=0,CVM=31
 | `LOW` | `0` or `1` | Final UP or DOWN signal is still below the low-light threshold |
 | `UI` | integer | Integration cycles used by the selected UP profile: 100 or 255 |
 | `UX` | integer | Exposures summed in the selected UP profile: 1 or 3 |
+| `UG` | decimal | Selected UP gain: 3.70 or 16.00 |
 | `DX` | integer | Exposures summed in the selected DOWN profile: 1 or 3; DOWN always uses 255 cycles |
+| `DG` | decimal | Selected DOWN gain: 3.70 or 16.00 |
 | `SAT` | bit mask | Saturation: bit 0 = UP, bit 1 = DOWN |
 | `CVM` | bit mask | Profiles with stored calibration marked valid |
 
@@ -112,9 +146,15 @@ with `(SAT & 1) != 0` for UP and `(SAT & 2) != 0` for DOWN.
 | 2 | 4 | `up_255x3` |
 | 3 | 8 | `down_255x1` |
 | 4 | 16 | `down_255x3` |
+| 5 | 32 | `up_100x1_g16` |
+| 6 | 64 | `up_255x1_g16` |
+| 7 | 128 | `up_255x3_g16` |
+| 8 | 256 | `down_255x1_g16` |
+| 9 | 512 | `down_255x3_g16` |
 
-For example, `CVM=31` means all five profiles are marked valid. Match `UI`,
-`UX`, and `DX` to the selected profiles before checking their bits.
+`CVM=31` means all five 3.7x profiles are valid. `CVM=1023` means all ten
+dual-gain profiles are valid. Match `UI`, `UX`, `UG`, `DX`, and `DG` to the
+selected profiles before checking their bits.
 
 ### Validating a reading
 
@@ -147,8 +187,8 @@ function parseMantiStatus(bytes) {
   );
 
   const required = [
-    "NDVI", "SEQ", "MS", "BAT", "UP", "DN", "LOW",
-    "UI", "UX", "DX", "SAT", "CVM"
+    "NDVI", "RUI", "RUV", "RDI", "RDV", "SEQ", "MS", "BAT", "UP", "DN", "LOW",
+    "UI", "UX", "UG", "DX", "DG", "SAT", "CVM"
   ];
   if (!required.every((key) => key in fields)) {
     throw new Error("Incomplete Manti-S status payload");
@@ -156,6 +196,10 @@ function parseMantiStatus(bytes) {
 
   return {
     ndvi: Number(fields.NDVI),
+    rawUpRed: Number(fields.RUI),
+    rawUpNir: Number(fields.RUV),
+    rawDownRed: Number(fields.RDI),
+    rawDownNir: Number(fields.RDV),
     sequence: Number(fields.SEQ),
     measuredAtUptimeMs: Number(fields.MS),
     batteryPercent: Number(fields.BAT),
@@ -164,7 +208,9 @@ function parseMantiStatus(bytes) {
     lowLight: fields.LOW === "1",
     upIntegrationCycles: Number(fields.UI),
     upExposures: Number(fields.UX),
+    upGain: Number(fields.UG),
     downExposures: Number(fields.DX),
+    downGain: Number(fields.DG),
     saturationMask: Number(fields.SAT),
     calibrationValidMask: Number(fields.CVM),
     raw: text
@@ -185,9 +231,9 @@ function parseMantiStatus(bytes) {
 ### Notification compatibility
 
 The complete status record is longer than the 20-byte value available with the
-default 23-byte ATT MTU. The current firmware does not explicitly request a
-larger local MTU or add a Client Characteristic Configuration Descriptor
-(CCCD). Consequently, notification behaviour can vary between BLE clients.
+default 23-byte ATT MTU. Firmware configures a 247-byte local MTU and provides
+a Client Characteristic Configuration Descriptor (CCCD). The client must still
+negotiate a sufficiently large MTU before subscribing to notifications.
 
 For compatibility with the current firmware:
 
@@ -196,9 +242,9 @@ For compatibility with the current firmware:
   discard the notification and perform a read.
 - Polling `SEQ` with periodic reads is the safest cross-platform approach.
 
-An application must not silently accept a truncated notification. A future
-firmware protocol should add a CCCD and negotiate an ATT MTU of at least 128
-bytes before full-record notifications are treated as portable.
+An application must not silently accept a truncated notification. Negotiate an
+ATT MTU of at least 200 bytes before treating full-record notifications as
+portable.
 
 ## Protocol limitations
 
@@ -207,8 +253,8 @@ bytes before full-record notifications are treated as portable.
 - There is no device identifier in the payload.
 - There is no protocol-version field.
 - There is no authentication, encryption requirement, or bonding.
-- Raw spectral channels and calibration tables are available over USB serial,
-  not through this BLE characteristic.
+- The four dark-corrected NDVI-band inputs are available through BLE. The other
+  raw spectral channels and calibration tables remain USB-serial only.
 
 Apps should timestamp records on receipt, associate the connection with their
 own device identifier, ignore unknown fields, and retain the full original

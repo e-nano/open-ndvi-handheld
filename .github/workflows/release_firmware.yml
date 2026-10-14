@@ -1,0 +1,67 @@
+name: Release firmware
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9._-]+)?', tag):
+              raise SystemExit(f'Invalid firmware release tag: {tag}')
+          with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+              env_file.write(f'RELEASE_PRERELEASE={int("-" in tag)}\n')
+          Path('firmware/src/release_version.h').write_text(
+              f'#pragma once\n#define MANTI_FIRMWARE_VERSION "{tag}"\n'
+              f'#define MANTI_FIRMWARE_BUILD_DATE "{datetime.now(timezone.utc).date()}"\n'
+          )
+          PY
+      - name: Install PlatformIO
+        run: python3 -m pip install platformio==6.1.19
+      - name: Build active firmware
+        working-directory: firmware
+        run: pio run
+      - name: Prepare release assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          binary = Path('firmware/.pio/build/featheresp32v2/firmware.bin').read_bytes()
+          output = Path('firmware/.pio/build/featheresp32v2')
+          (output / 'manifest.txt').write_text(
+              f'version={os.environ["RELEASE_TAG"]}\n'
+              f'size={len(binary)}\n'
+              f'sha256={hashlib.sha256(binary).hexdigest()}\n'
+          )
+          PY
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_args=()
+          if [[ "$RELEASE_PRERELEASE" == 1 ]]; then release_args+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" \
+            "${release_args[@]}" --title "$GITHUB_REF_NAME" --generate-notes \
+            firmware/.pio/build/featheresp32v2/firmware.bin \
+            firmware/.pio/build/featheresp32v2/manifest.txt

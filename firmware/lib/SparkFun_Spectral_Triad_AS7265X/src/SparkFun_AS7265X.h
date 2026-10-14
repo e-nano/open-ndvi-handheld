@@ -203,10 +203,9 @@ private:
   uint8_t readRegister(uint8_t addr);
   boolean writeRegister(uint8_t addr, uint8_t val);
 
-  //Integration time is 2.8 * integration cycles.
-  //We will wait for integration time + 50%
-  //Since maximum number of integration cycles is 255, absolute max wait time is 2.8 * 255 * 1.5 = 1071
-  uint16_t maxWaitTime = 1071;
+  //Six-channel mode converts two banks. Wait for twice the configured
+  //integration time plus 50%; 255 cycles requires at most about 2151ms.
+  uint16_t maxWaitTime = 2151;
 };
 
 #endif

@@ -1,0 +1,21 @@
+{
+  "devices": {
+    "c0:cd:d6:39:86:60": {
+      "device_name": "Manti-S-00003",
+      "device_number": 3
+    },
+    "c0:cd:d6:39:93:94": {
+      "device_name": "Manti-S-00002",
+      "device_number": 2
+    },
+    "e8:9f:6d:32:e3:90": {
+      "device_name": "Manti-S-00004",
+      "device_number": 4
+    },
+    "f4:65:0b:33:1b:84": {
+      "device_name": "Manti-S-00001",
+      "device_number": 1
+    }
+  },
+  "next_device_number": 5
+}

@@ -381,7 +381,9 @@ void AS7265X::setGain(uint8_t gain)
 //Time will be 2.8ms * [integration cycles + 1]
 void AS7265X::setIntegrationCycles(uint8_t cycleValue)
 {
-  maxWaitTime = (int)(cycleValue * 2.8 * 1.5) + 1; //Wait for integration time + 50%
+  // Six-channel one-shot mode converts two banks. Allow 50% margin over
+  // 2 * 2.8ms * (ATIME + 1), otherwise long integrations return too early.
+  maxWaitTime = (uint16_t)(2.0 * 2.8 * (cycleValue + 1) * 1.5) + 1;
   virtualWriteRegister(AS7265X_INTERGRATION_TIME, cycleValue); //Write
 }
 

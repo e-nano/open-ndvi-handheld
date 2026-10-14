@@ -9,31 +9,6 @@ on:
     paths: [ 'firmware/**' ]
 
 jobs:
-  build-arduino:
-    runs-on: ubuntu-latest
-    name: Build with Arduino IDE
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Arduino IDE
-      uses: arduino/setup-arduino-cli@v1
-
-    - name: Install ESP32 core
-      run: |
-        arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_dev_index.json
-        arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_dev_index.json
-
-    - name: Install required libraries
-      run: |
-        arduino-cli lib install "SparkFun AS7265x Arduino Library"
-        arduino-cli lib install "Adafruit ST7735 and ST7789 Library"
-        arduino-cli lib install "Adafruit GFX Library"
-
-    - name: Compile firmware
-      run: |
-        arduino-cli compile --fqbn esp32:esp32:adafruit_feather_esp32v2:FlashFreq=80 firmware/ndvi_handheld/ndvi_handheld.ino
-
   build-platformio:
     runs-on: ubuntu-latest
     name: Build with PlatformIO
