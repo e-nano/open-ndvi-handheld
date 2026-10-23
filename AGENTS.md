@@ -28,8 +28,11 @@ installation is started manually in its portal.
    measurement equivalence. If those areas changed, validate on one device and
    compare its calibration backup and post-update status before fleet use.
    Current firmware reads only the schema-5 profile-valid mask and red/NIR dark
-   offsets; factor tables are not used for display or BLE NDVI. Keep raw serial
-   `capture <profile>` available for diffuser characterisation outside the unit.
+   offsets; factor tables are not used for display or BLE NDVI. A new device
+   with no blob uses zero dark offsets, normal 3.7x gain, and adaptive
+   integration/exposures; its mask can be zero. Only valid saved 16x profile
+   bits allow high-gain runtime retries. Keep raw serial `capture <profile>`
+   available for diffuser characterisation outside the unit.
 4. Run `pio run` from `firmware/`, check `git diff --check`, and run relevant
    checks for the changed code. Compare the live TLS chains for the GitHub
    manifest and redirected release assets with the flash-resident roots in
@@ -129,9 +132,11 @@ OTA client runs out of memory before it can download the repair.
    partition table and app, and provisions the device number. Select the port
    explicitly. Do not upload the old `.ino` sketch or only a generic OTA binary.
 8. After boot, read `status` again. Confirm the intended version and device
-   name, `calibration_source=flash`, `calibration_schema=5`, expected valid
-   mask, and both sensors ready. Read back `caldata` and compare its SHA-256 to
-   the backup. Run one measurement, then test the 5-second button hold, setup
-   page, and next-press exit. OTA remains a manual portal action. If checks
-   fail, preserve backups and report the exact difference before further
-   writes or restoration.
+   name, `calibration_schema=5`, and both sensors ready. For an existing
+   calibrated device, confirm `calibration_source=flash` and its expected
+   valid mask. A new board with no calibration blob may correctly report
+   `calibration_source=none` and mask `0`. Read back `caldata` and compare its
+   SHA-256 to the backup. Run one measurement, then test the 5-second button
+   hold, setup page, and next-press exit. OTA remains a manual portal action.
+   If checks fail, preserve backups and report the exact difference before
+   further writes or restoration.

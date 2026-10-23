@@ -6,10 +6,12 @@ This document describes the active PlatformIO firmware in
 
 ## Low-light measurement profiles
 
-Both AS7265x sensors start each profile at 3.7x gain. If either NDVI band is
-low, firmware retries that profile at 16x before increasing integration.
-The saved profile-valid mask controls 16x eligibility. Saturated 16x profiles
-are skipped; the NDVI calculation normalises the selected gains.
+Normal measurements use 3.7x gain on both AS7265x sensors. Low red or NIR
+counts cause longer integration or three summed exposures. A new device without
+stored calibration reports `CVM=0` and still calculates NDVI.
+The optional 16x retry requires both a build with 16x enabled and a valid
+saved 16x profile bit. Saturated 16x results are skipped; NDVI normalises
+the gain if a 16x result is selected.
 
 An AS7265x integration cycle is approximately 2.8 ms. Six-channel one-shot
 mode converts two banks, so one exposure takes approximately:
@@ -29,26 +31,27 @@ overhead add some delay.
 
 The adaptive UP sequence is:
 
-1. Capture `up_100x1` at 3.7x, then at 16x if raw red or NIR is below 100.
-2. If still low, repeat that gain sequence for `up_255x1`.
-3. If still low, repeat it for `up_255x3`.
-4. Use only the final selected profile and gain for NDVI.
+1. Capture `up_100x1` at 3.7x.
+2. If raw red or NIR is below 100, capture `up_255x1` at 3.7x.
+3. If still low, capture `up_255x3` at 3.7x.
+4. Use only the final selected profile for NDVI. When an eligible 16x profile
+   exists, firmware can retry at 16x between these 3.7x steps.
 
 Level 3 is three separate 255-cycle exposures added together. It is a sum, not
 an average. Each profile can have its own saved red/NIR dark offsets.
 
-The DOWN sensor starts with `down_255x1` at 3.7x, tries it at 16x if low, then
-does the same for `down_255x3` if needed. DOWN escalation is based on the DOWN
-signal, not the UP result. A saturated 16x result is not selected; firmware
-continues or falls back to the final profile at 3.7x.
+The DOWN sensor starts with `down_255x1` at 3.7x, then captures `down_255x3`
+if low. DOWN escalation depends on its own signal. An eligible 16x profile
+can be tried between the 3.7x steps; a saturated 16x result is not selected.
 
 | DOWN profile | Cycles | Exposures | Approx. integration |
 |---|---:|---:|---:|
 | `down_255x1` | 255 | 1 | 1.434 s |
 | `down_255x3` | 255 | 3, summed | 4.301 s |
 
-Retries are cumulative. A measurement that tries every gain and profile takes
-about 24 seconds of sensor conversion time. Typical measurements stop earlier.
+Retries are cumulative. Trying every 3.7x profile takes about 12 seconds of
+sensor conversion time; eligible 16x retries can increase this to about 24
+seconds. Typical measurements stop earlier.
 
 `LOW=1` means the final UP or DOWN profile has a direct raw I or V count below
 100. The firmware
@@ -66,6 +69,9 @@ The UP inputs are divided by the characterised diffuser transmission and
 normalised to the selected DOWN integration, exposure, and gain profile. No
 channel calibration factor is applied. Saved schema-5 factor/input tables are
 ignored; only the profile-valid mask and red/NIR dark offsets are read at boot.
+Without a valid blob, dark offsets default to zero and 3.7x measurements
+remain available. The fixed diffuser values describe the top optical path;
+checking them and the resulting NDVI against references assesses accuracy.
 The four inputs are included in BLE as
 `RUI`, `RUV`, `RDI`, and `RDV`.
 
@@ -94,7 +100,7 @@ The characteristic contains one comma-separated record with `KEY=VALUE`
 fields and no newline:
 
 ```text
-NDVI=0.67,RUI=845.20,RUV=1240.10,RDI=312.40,RDV=910.30,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,UG=16.00,DX=1,DG=16.00,SAT=0,CVM=1023
+NDVI=0.41,RUI=845.20,RUV=1240.10,RDI=312.40,RDV=910.30,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,UG=3.70,DX=1,DG=3.70,SAT=0,CVM=0
 ```
 
 | Field | Type | Meaning |
@@ -116,7 +122,7 @@ NDVI=0.67,RUI=845.20,RUV=1240.10,RDI=312.40,RDV=910.30,SEQ=42,MS=183921,BAT=84,U
 | `DX` | integer | Exposures summed in the selected DOWN profile: 1 or 3; DOWN always uses 255 cycles |
 | `DG` | decimal | Selected DOWN gain: 3.70 or 16.00 |
 | `SAT` | bit mask | Saturation: bit 0 = UP, bit 1 = DOWN |
-| `CVM` | bit mask | Profiles with stored calibration marked valid |
+| `CVM` | bit mask | Saved profile-valid flags; `0` is normal on a new device |
 
 `SAT` is set if any spectral channel reaches 65535 in any exposure. Decode it
 with `(SAT & 1) != 0` for UP and `(SAT & 2) != 0` for DOWN.
@@ -136,9 +142,11 @@ with `(SAT & 1) != 0` for UP and `(SAT & 2) != 0` for DOWN.
 | 8 | 256 | `down_255x1_g16` |
 | 9 | 512 | `down_255x3_g16` |
 
-`CVM=31` means all five 3.7x profiles are valid. `CVM=1023` means all ten
-dual-gain profiles are valid. Match `UI`, `UX`, `UG`, `DX`, and `DG` to the
-selected profiles before checking their bits.
+`CVM=0` means no profiles are marked valid; it does not invalidate 3.7x
+measurements. Check `calibration_source` over serial to determine whether a
+schema-5 blob supplied dark offsets. `CVM=31` marks all five 3.7x profiles
+valid. `CVM=1023` marks
+all ten dual-gain profiles valid. Bits 5–9 permit the corresponding 16x retry.
 
 ### Validating a reading
 
@@ -148,7 +156,7 @@ Treat the payload as a usable measurement only when:
 - `SEQ` differs from the last record your app stored.
 - `UP=1` and `DN=1`.
 - `LOW=0`.
-- The selected UP and DOWN profile bits are present in `CVM`.
+- If `UG` or `DG` is 16.00, its selected 16x profile bit is present in `CVM`.
 - The relevant `SAT` bits are clear.
 
 Keep the raw status record alongside the NDVI value so later analysis can see

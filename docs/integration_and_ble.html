@@ -52,8 +52,9 @@
         <p class="doc-kicker">Low-light behaviour</p>
         <h2>Three UP integration levels</h2>
         <p>
-          Both sensors start at 3.7x gain and can retry at 16x when the saved
-          profile-valid mask allows it. One six-channel exposure takes approximately
+          Normal measurements use 3.7x gain. Low red or NIR counts cause longer
+          integration or three summed exposures. Optional 16x retries require a
+          valid saved 16x profile. One six-channel exposure takes approximately
           <code>2 × 2.8 ms × (cycles + 1)</code> because two channel banks are converted.
         </p>
         <div class="doc-table-wrap">
@@ -69,14 +70,16 @@
           </table>
         </div>
         <ol>
-          <li>Capture level 1 at 3.7x; retry at 16x when raw red or NIR is below 100.</li>
-          <li>If still low, repeat at level 2.</li>
-          <li>If still low, repeat at level 3.</li>
+          <li>Capture level 1 at 3.7x.</li>
+          <li>If raw red or NIR is below 100, capture level 2 at 3.7x.</li>
+          <li>If still low, capture level 3 at 3.7x.</li>
           <li>Calculate NDVI using only the final selected profile.</li>
         </ol>
         <div class="doc-notice">
           Level 3 adds three separate exposures; it does not average them. Each
-          profile can have its own saved red/NIR dark offsets. Legacy factor
+          profile can have its own saved red/NIR dark offsets. Without saved
+          data, offsets are zero and 3.7x measurement still works. Eligible
+          16x profiles can be tried between the steps above. Legacy factor
           tables are ignored by the displayed and BLE result.
         </div>
         <p>
@@ -94,8 +97,8 @@
           <h2>Independent escalation</h2>
           <p>
             DOWN starts with <code>down_255x1</code> at 3.7x. If raw 645 nm or
-            810 nm is below 100 counts, it retries at 16x when eligible, then
-            captures <code>down_255x3</code> if still low.
+            810 nm is below 100 counts, it captures <code>down_255x3</code>
+            at 3.7x. Eligible 16x profiles can be tried between these steps.
           </p>
           <ul>
             <li>255 × 1: approximately 1.434 s</li>
@@ -112,8 +115,9 @@
             label or reject it as low confidence.
           </p>
           <p>
-            Retries are cumulative. Reaching the longest UP and DOWN profiles
-            requires about 24 seconds of sensor conversion time.
+            Retries are cumulative. Trying every 3.7x profile takes about
+            12 seconds of sensor conversion time; eligible 16x retries can
+            increase this to about 24 seconds.
           </p>
         </article>
       </section>
@@ -144,7 +148,7 @@
       <section class="panel doc-panel">
         <p class="doc-kicker">Wire format</p>
         <h2>Status payload</h2>
-        <pre class="doc-code"><code>NDVI=0.67,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,DX=1,SAT=0,CVM=31</code></pre>
+        <pre class="doc-code"><code>NDVI=0.41,SEQ=42,MS=183921,BAT=84,UP=1,DN=1,LOW=0,UI=255,UX=1,UG=3.70,DX=1,DG=3.70,SAT=0,CVM=0</code></pre>
         <p>The record is comma-separated <code>KEY=VALUE</code> text with no newline.</p>
         <div class="doc-table-wrap">
           <table class="doc-table">
@@ -158,9 +162,10 @@
               <tr><td><code>LOW</code></td><td>Final signal remains below threshold</td></tr>
               <tr><td><code>UI</code></td><td>Selected UP integration cycles: 100 or 255</td></tr>
               <tr><td><code>UX</code></td><td>Selected UP exposure count: 1 or 3</td></tr>
+              <tr><td><code>UG</code>, <code>DG</code></td><td>Selected UP and DOWN gain; normally 3.70</td></tr>
               <tr><td><code>DX</code></td><td>Selected DOWN exposure count: 1 or 3; cycles are always 255</td></tr>
               <tr><td><code>SAT</code></td><td>Bit 0 = UP saturation; bit 1 = DOWN saturation</td></tr>
-              <tr><td><code>CVM</code></td><td>Saved profile-valid bit mask; controls 16x eligibility</td></tr>
+              <tr><td><code>CVM</code></td><td>Saved profile-valid mask; 0 is normal without stored calibration</td></tr>
             </tbody>
           </table>
         </div>
@@ -168,7 +173,8 @@
           <code>CVM</code> bits 0–4 map to <code>up_100x1</code>,
           <code>up_255x1</code>, <code>up_255x3</code>, <code>down_255x1</code>,
           and <code>down_255x3</code>. Bits 5–9 mark their 16x counterparts.
-          A value of 1023 marks all ten profiles valid.
+          A value of 0 means no saved flags and does not invalidate 3.7x
+          measurements. A value of 1023 marks all ten profiles valid.
         </p>
       </section>
 
@@ -179,7 +185,7 @@
           <ul>
             <li>Require <code>SEQ &gt; 0</code> and a new sequence number.</li>
             <li>Require <code>UP=1</code>, <code>DN=1</code>, and <code>LOW=0</code>.</li>
-            <li>Use <code>CVM</code> to interpret whether 16x profiles were eligible.</li>
+            <li>Use <code>CVM</code> to interpret 16x eligibility; do not reject 3.7x results when <code>CVM=0</code>.</li>
             <li>Require relevant <code>SAT</code> bits to be clear.</li>
             <li>Store the full payload with the NDVI result.</li>
           </ul>

@@ -73,10 +73,12 @@ Back up each device's calibration before the USB flash and do not use a full
 flash erase. The first boot stores the USB-provisioned device number in default
 NVS; generic release images then preserve that number. A new board flashed
 directly with a generic image uses its factory MAC in the BLE and Wi-Fi name.
-Before flashing, send `status` over USB serial and confirm
-`calibration_schema=5`, `calibration_source=flash`, and the expected
-`calibration_valid_mask`. This firmware ignores older calibration schemas;
-their flash bytes remain present but are not used for measurements.
+Before updating an existing device, record its `status` and preserve its
+`caldata` backup. Check its schema, source, and valid mask after the update.
+A new device can report `calibration_source=none` and
+`calibration_valid_mask=0`: normal 3.7x measurements still work with zero dark
+offsets. This firmware ignores older calibration schemas; their flash bytes
+remain present but are not used for measurements.
 
 ### Publishing an update
 
@@ -96,8 +98,11 @@ their flash bytes remain present but are not used for measurements.
 
 ## Integration timing
 
-- Each integration level starts at 3.7x and, if low, retries at 16x before
-  moving to the next level.
+- Normal measurements use 3.7x gain. Low signals cause longer integration and
+  then three summed exposures. No saved calibration blob is needed for this path.
+- An optional 16x retry occurs only when the build enables it **and** the
+  matching 16x profile is marked valid in a schema-5 `caldata` blob. With
+  `calibration_valid_mask=0`, gain stays at 3.7x.
 - UP uses 100x1, 255x1, then 255x3 profiles as required.
 - DOWN uses 255x1, then 255x3 profiles as required.
 - In normal light, DOWN captures one exposure.
@@ -105,7 +110,7 @@ their flash bytes remain present but are not used for measurements.
 - BLE reports integration/exposures as `UI`/`UX`/`DX` and selected gains as
   `UG`/`DG`.
 - Serial reports the summed raw channels and accumulation count for both sensors.
-- Low-light decisions monitor direct raw counts before calibration:
+- Low-light decisions monitor direct raw counts:
   - UP: channel I or V below 100.
   - DOWN: channel I or V below 100.
 - See [Integration Time and BLE API](../docs/integration_and_ble.md) for timing,
@@ -116,6 +121,8 @@ their flash bytes remain present but are not used for measurements.
 - Existing schema-5 `caldata` blobs remain untouched. At boot, firmware reads
   the profile-valid mask and red/NIR dark offsets, then discards the legacy
   factor and input tables from RAM.
+- A new device without that blob uses zero dark offsets and all five 3.7x
+  profiles. `calibration_source=none` does not mean NDVI is disabled.
 - The displayed and BLE NDVI calculation uses those dark offsets and the fixed
   diffuser transmission constants (`I=0.0470`, `V=0.0564`). It scales for the
   selected integration cycles, exposures, and gain. No factor curve is applied.
@@ -131,8 +138,8 @@ their flash bytes remain present but are not used for measurements.
   separate serial calibrated-NDVI calculation are removed.
 - Serial status retains `up_calibration_mode=not-used` and
   `up_transfer_profile=none` for compatibility.
-- `CVM=31` means all five 3.7x profiles are valid; `CVM=1023` means all ten
-  dual-gain profiles are valid.
+- `CVM=0` means no stored profile flags; normal 3.7x measurements still work.
+  `CVM=31` marks all five 3.7x profiles valid; `CVM=1023` marks all ten.
 - Schema-2, schema-3 and schema-4 flash blobs are ignored. Without a valid
   schema-5 blob, profile flags and dark offsets default to zero.
 

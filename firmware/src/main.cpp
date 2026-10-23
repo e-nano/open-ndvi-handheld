@@ -112,6 +112,8 @@ static constexpr const char *CALIBRATION_KEY = "blob";
 static constexpr const char *CALIBRATION_PARTITION = "caldata";
 static constexpr uint32_t CALIBRATION_MAGIC = 0x4D534341UL;
 static constexpr uint16_t CALIBRATION_VERSION = 5;
+// This build flag only permits 16x retries; a saved valid 16x profile is also required.
+// Without one, runtime gain stays at 3.7x while integration/exposures adapt.
 static constexpr bool ENABLE_16X_CALIBRATION = MANTI_ENABLE_16X_CALIBRATION != 0;
 static constexpr size_t SERIAL_COMMAND_MAX_TOKENS = 2;
 static constexpr size_t RED_CHANNEL_INDEX = 9;
