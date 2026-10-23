@@ -100,7 +100,7 @@ uint32_t buttonPressStartedAt = 0;
 
 static constexpr const char *CALIBRATION_FW_ID = "Manti-S-Cal";
 #ifndef MANTI_FIRMWARE_VERSION
-#define MANTI_FIRMWARE_VERSION "v0.3.2-dev1"
+#define MANTI_FIRMWARE_VERSION "v0.3.3-dev4"
 #endif
 static constexpr const char *FIRMWARE_VERSION = MANTI_FIRMWARE_VERSION;
 #ifndef MANTI_FIRMWARE_BUILD_DATE
@@ -113,10 +113,7 @@ static constexpr const char *CALIBRATION_PARTITION = "caldata";
 static constexpr uint32_t CALIBRATION_MAGIC = 0x4D534341UL;
 static constexpr uint16_t CALIBRATION_VERSION = 5;
 static constexpr bool ENABLE_16X_CALIBRATION = MANTI_ENABLE_16X_CALIBRATION != 0;
-static constexpr size_t SERIAL_COMMAND_MAX_TOKENS =
-  (4 + (2 * AS7265X_CAL_POINT_COUNT) > 2 + AS7265X_CHANNEL_COUNT)
-    ? 4 + (2 * AS7265X_CAL_POINT_COUNT)
-    : 2 + AS7265X_CHANNEL_COUNT;
+static constexpr size_t SERIAL_COMMAND_MAX_TOKENS = 2;
 static constexpr size_t RED_CHANNEL_INDEX = 9;
 static constexpr size_t NIR_CHANNEL_INDEX = 14;
 static constexpr uint8_t UP_INTEGRATION_CYCLES = 100;
@@ -128,7 +125,6 @@ static constexpr uint32_t UP_MIN_RAW_SIGNAL = 100;
 static constexpr uint32_t DOWN_MIN_RAW_SIGNAL = 100;
 static constexpr float UP_DIFFUSER_TRANSMISSION_RED = 0.0470f;
 static constexpr float UP_DIFFUSER_TRANSMISSION_NIR = 0.0564f;
-static constexpr float CALIBRATION_MIN_USABLE_INPUT = 5.0f;
 static constexpr float BASE_SENSOR_GAIN = 3.7f;
 static constexpr float HIGH_SENSOR_GAIN = 16.0f;
 static constexpr int RUNTIME_GAIN_ATTEMPTS = ENABLE_16X_CALIBRATION ? 2 : 1;
@@ -185,13 +181,13 @@ static const uint16_t CHANNEL_WAVELENGTHS[AS7265X_CHANNEL_COUNT] = {
   645, 680, 705, 730, 760, 810, 860, 900, 940
 };
 
-static float CAL_PROFILE_INPUTS[CALIBRATION_PROFILE_COUNT][AS7265X_CHANNEL_COUNT][AS7265X_CAL_POINT_COUNT];
-static float CAL_PROFILE_FACTORS[CALIBRATION_PROFILE_COUNT][AS7265X_CHANNEL_COUNT][AS7265X_CAL_POINT_COUNT];
-static float CAL_PROFILE_DARK_OFFSETS[CALIBRATION_PROFILE_COUNT][AS7265X_CHANNEL_COUNT] = {};
+static float CAL_PROFILE_RED_DARK_OFFSETS[CALIBRATION_PROFILE_COUNT] = {};
+static float CAL_PROFILE_NIR_DARK_OFFSETS[CALIBRATION_PROFILE_COUNT] = {};
 static uint16_t calibration_valid_mask = 0;
 static bool calibration_loaded_from_flash = false;
 
-struct CalibrationBlob {
+// This type matches the existing on-flash schema; it is allocated only during boot.
+struct LegacyCalibrationBlob {
   uint32_t magic;
   uint16_t version;
   uint8_t profile_count;
@@ -202,15 +198,7 @@ struct CalibrationBlob {
   float dark_offsets[CALIBRATION_PROFILE_COUNT][AS7265X_CHANNEL_COUNT];
 };
 
-static CalibrationBlob calibration_blob_storage;
-
-struct CalibrationProfileView {
-  CalibrationProfileIndex index;
-  const CalibrationProfileDefinition *definition;
-  float (*inputs)[AS7265X_CAL_POINT_COUNT];
-  float (*factors)[AS7265X_CAL_POINT_COUNT];
-  float *dark_offsets;
-};
+static_assert(sizeof(LegacyCalibrationBlob) == 9372, "Legacy calibration layout changed");
 
 // ---------------- Battery ----------------
 #define BATT A3
@@ -275,9 +263,7 @@ int read_voltage_percent() {
 }
 
 // ---------------- NDVI ----------------
-String message_NDVI = "0.00";
 String message_raw_diffuser_NDVI = "0.00";
-float ndvi = 0.0f;
 float raw_diffuser_ndvi = 0.0f;
 float last_raw_diffuser_iU = 0.0f;
 float last_raw_diffuser_vU = 0.0f;
@@ -295,21 +281,6 @@ bool last_up_saturated = false;
 bool last_down_saturated = false;
 uint32_t measurement_sequence = 0;
 unsigned long last_measurement_ms = 0;
-
-// Last raw NDVI-band readings — displayed beside their calibrated values.
-uint32_t last_raw_iU = 0;
-uint32_t last_raw_vU = 0;
-uint32_t last_raw_iD = 0;
-uint32_t last_raw_vD = 0;
-
-// Last calibrated readings for all four channels — displayed on the NDVI screen.
-float last_calc_iU = 0.0f;
-float last_calc_vU = 0.0f;
-float last_calc_iD = 0.0f;
-float last_calc_vD = 0.0f;
-bool last_up_used_down_transfer = false;
-bool last_up_transfer_clamped = false;
-CalibrationProfileIndex last_up_transfer_profile = PROFILE_DOWN_255X1;
 
 // ---------------- BLE ----------------
 #ifdef MANTI_DEVICE_NUMBER
@@ -345,6 +316,7 @@ static const char *BLE_STATUS_UUID  = "2d86686f-34f8-4f1b-a4ac-f127f90f7df0";
 BLEServer         *ble_server                = nullptr;
 BLEService        *ble_service               = nullptr;
 BLECharacteristic *ble_status_characteristic = nullptr;
+bool blePausedForPortal = false;
 
 static SemaphoreHandle_t ble_mutex = nullptr;
 static bool _ble_connected         = false;
@@ -399,7 +371,7 @@ class MantisBLEServerCallbacks : public BLEServerCallbacks {
   }
   void onDisconnect(BLEServer *server) {
     ble_set_connected(false);
-    server->startAdvertising();
+    if (!blePausedForPortal) server->startAdvertising();
   }
 };
 
@@ -426,101 +398,42 @@ bool get_calibration_profile_index(const char *profile_id, CalibrationProfileInd
   return false;
 }
 
-CalibrationProfileView get_calibration_profile_view(CalibrationProfileIndex index) {
-  return {
-    index,
-    &CALIBRATION_PROFILES[index],
-    CAL_PROFILE_INPUTS[index],
-    CAL_PROFILE_FACTORS[index],
-    CAL_PROFILE_DARK_OFFSETS[index]
-  };
-}
-
-bool get_calibration_profile_view(const char *profile_id, CalibrationProfileView &view) {
-  CalibrationProfileIndex index;
-  if (!get_calibration_profile_index(profile_id, index)) return false;
-  view = get_calibration_profile_view(index);
-  return true;
-}
-
 bool calibration_profile_is_valid(CalibrationProfileIndex index) {
   return (calibration_valid_mask & (uint16_t)(1U << index)) != 0;
-}
-
-void initialize_calibration_profiles_from_header() {
-  for (uint8_t profile = 0; profile < CALIBRATION_PROFILE_COUNT; ++profile) {
-    bool is_up = CALIBRATION_PROFILES[profile].is_up;
-    memcpy(
-      CAL_PROFILE_INPUTS[profile],
-      is_up ? UP_CAL_INPUTS : DOWN_CAL_INPUTS,
-      sizeof(CAL_PROFILE_INPUTS[profile])
-    );
-    memcpy(
-      CAL_PROFILE_FACTORS[profile],
-      is_up ? UP_CAL_FACTORS : DOWN_CAL_FACTORS,
-      sizeof(CAL_PROFILE_FACTORS[profile])
-    );
-    memset(CAL_PROFILE_DARK_OFFSETS[profile], 0, sizeof(CAL_PROFILE_DARK_OFFSETS[profile]));
-  }
-  calibration_valid_mask = 0;
-}
-
-void fill_calibration_blob(CalibrationBlob &blob) {
-  blob.magic = CALIBRATION_MAGIC;
-  blob.version = CALIBRATION_VERSION;
-  blob.profile_count = CALIBRATION_PROFILE_COUNT;
-  blob.reserved = 0;
-  blob.valid_mask = calibration_valid_mask;
-  memcpy(blob.inputs, CAL_PROFILE_INPUTS, sizeof(CAL_PROFILE_INPUTS));
-  memcpy(blob.factors, CAL_PROFILE_FACTORS, sizeof(CAL_PROFILE_FACTORS));
-  memcpy(blob.dark_offsets, CAL_PROFILE_DARK_OFFSETS, sizeof(CAL_PROFILE_DARK_OFFSETS));
-}
-
-void apply_calibration_blob(const CalibrationBlob &blob) {
-  memcpy(CAL_PROFILE_INPUTS, blob.inputs, sizeof(CAL_PROFILE_INPUTS));
-  memcpy(CAL_PROFILE_FACTORS, blob.factors, sizeof(CAL_PROFILE_FACTORS));
-  memcpy(CAL_PROFILE_DARK_OFFSETS, blob.dark_offsets, sizeof(CAL_PROFILE_DARK_OFFSETS));
-  calibration_valid_mask = blob.valid_mask;
 }
 
 bool load_calibration_from_partition(const char *partition_label) {
   if (!calibration_preferences.begin(CALIBRATION_NAMESPACE, true, partition_label)) return false;
   size_t stored_size = calibration_preferences.getBytesLength(CALIBRATION_KEY);
-  if (stored_size == sizeof(CalibrationBlob)) {
-    CalibrationBlob &blob = calibration_blob_storage;
-    size_t read_size = calibration_preferences.getBytes(CALIBRATION_KEY, &blob, sizeof(blob));
-    calibration_preferences.end();
-    if (read_size != sizeof(blob)) return false;
-    if (blob.magic != CALIBRATION_MAGIC || blob.version != CALIBRATION_VERSION) return false;
-    if (blob.profile_count != CALIBRATION_PROFILE_COUNT) return false;
-    apply_calibration_blob(blob);
-    calibration_loaded_from_flash = true;
-    return true;
+  if (stored_size == sizeof(LegacyCalibrationBlob)) {
+    LegacyCalibrationBlob *blob = static_cast<LegacyCalibrationBlob *>(malloc(stored_size));
+    if (blob != nullptr) {
+      size_t read_size = calibration_preferences.getBytes(CALIBRATION_KEY, blob, stored_size);
+      if (read_size == stored_size && blob->magic == CALIBRATION_MAGIC &&
+          blob->version == CALIBRATION_VERSION &&
+          blob->profile_count == CALIBRATION_PROFILE_COUNT) {
+        calibration_valid_mask = blob->valid_mask;
+        for (uint8_t profile = 0; profile < CALIBRATION_PROFILE_COUNT; ++profile) {
+          CAL_PROFILE_RED_DARK_OFFSETS[profile] = blob->dark_offsets[profile][RED_CHANNEL_INDEX];
+          CAL_PROFILE_NIR_DARK_OFFSETS[profile] = blob->dark_offsets[profile][NIR_CHANNEL_INDEX];
+        }
+        calibration_loaded_from_flash = true;
+      }
+      free(blob);
+    }
   }
-
   calibration_preferences.end();
-  return false;
+  return calibration_loaded_from_flash;
 }
 
 bool load_calibration_from_flash() {
-  // Only a complete current-schema blob in the dedicated partition is valid.
-  // Older schemas are deliberately ignored so calibration starts fresh.
+  // Read only profile flags and I/V dark offsets from existing schema-5 data.
+  // Never rewrite the legacy calibration partition.
   return load_calibration_from_partition(CALIBRATION_PARTITION);
 }
 
-bool save_calibration_to_flash() {
-  CalibrationBlob &blob = calibration_blob_storage;
-  fill_calibration_blob(blob);
-  if (!calibration_preferences.begin(CALIBRATION_NAMESPACE, false, CALIBRATION_PARTITION)) return false;
-  size_t written = calibration_preferences.putBytes(CALIBRATION_KEY, &blob, sizeof(blob));
-  calibration_preferences.end();
-  if (written != sizeof(blob)) return false;
-  calibration_loaded_from_flash = true;
-  return true;
-}
-
 const char *calibration_source_name() {
-  return calibration_loaded_from_flash ? "flash" : "header";
+  return calibration_loaded_from_flash ? "flash" : "none";
 }
 
 void read_sensor_channels(AS7265X &sensor, uint16_t values[AS7265X_CHANNEL_COUNT]) {
@@ -669,76 +582,16 @@ bool capture_adaptive_profiles(
   return false;
 }
 
-size_t first_usable_calibration_point(const float inputs[AS7265X_CAL_POINT_COUNT]) {
-  const size_t last = AS7265X_CAL_POINT_COUNT - 1;
-  for (size_t index = 0; index <= last; ++index) {
-    if (inputs[index] >= CALIBRATION_MIN_USABLE_INPUT) return index;
-  }
-  return last;
-}
-
-bool calibration_input_is_in_measured_range(
-  const CalibrationProfileView &view,
-  size_t channel_index,
-  float input_value
-) {
-  const size_t first = first_usable_calibration_point(view.inputs[channel_index]);
-  const size_t last = AS7265X_CAL_POINT_COUNT - 1;
-  return input_value >= view.inputs[channel_index][first] &&
-    input_value <= view.inputs[channel_index][last];
-}
-
-float interpolate_calibration_factor(
-  const float inputs[AS7265X_CAL_POINT_COUNT],
-  const float factors[AS7265X_CAL_POINT_COUNT],
-  float value
-) {
-  const size_t first = first_usable_calibration_point(inputs);
-  const size_t last = AS7265X_CAL_POINT_COUNT - 1;
-
-  // Calibration factors are bounded by measured data. Never extrapolate.
-  if (value <= inputs[first]) return factors[first];
-  if (value >= inputs[last]) return factors[last];
-
-  for (size_t idx = first + 1; idx < AS7265X_CAL_POINT_COUNT; ++idx) {
-    if (value <= inputs[idx]) {
-      float x1 = inputs[idx - 1];
-      float x2 = inputs[idx];
-      float y1 = factors[idx - 1];
-      float y2 = factors[idx];
-      if (fabsf(x2 - x1) < 1e-6f) return y2;
-      return y1 + ((value - x1) / (x2 - x1)) * (y2 - y1);
-    }
-  }
-
-  return factors[last];
-}
-
 float dark_corrected_calibration_input(
-  const CalibrationProfileView &view,
+  CalibrationProfileIndex profile,
   size_t channel_index,
   float raw_value
 ) {
-  float input_value = raw_value - view.dark_offsets[channel_index];
+  float dark_offset = channel_index == RED_CHANNEL_INDEX
+    ? CAL_PROFILE_RED_DARK_OFFSETS[profile]
+    : CAL_PROFILE_NIR_DARK_OFFSETS[profile];
+  float input_value = raw_value - dark_offset;
   return input_value > 0.0f ? input_value : 0.0f;
-}
-
-float apply_calibration_input(
-  const CalibrationProfileView &view,
-  size_t channel_index,
-  float input_value
-) {
-  float factor = interpolate_calibration_factor(
-    view.inputs[channel_index],
-    view.factors[channel_index],
-    input_value
-  );
-  return input_value * factor;
-}
-
-float apply_channel_calibration(const CalibrationProfileView &view, size_t channel_index, float raw_value) {
-  float input_value = dark_corrected_calibration_input(view, channel_index, raw_value);
-  return apply_calibration_input(view, channel_index, input_value);
 }
 
 float convert_up_input_to_down_profile(
@@ -758,22 +611,22 @@ float convert_up_input_to_down_profile(
 }
 
 float calculate_raw_diffuser_ndvi(
-  const CalibrationProfileView &up_view,
-  const CalibrationProfileView &down_view,
+  const CalibrationProfileDefinition &up_profile,
+  const CalibrationProfileDefinition &down_profile,
   float up_red_input,
   float up_nir_input,
   float down_red_input,
   float down_nir_input
 ) {
   float equivalent_up_red = convert_up_input_to_down_profile(
-    *up_view.definition,
-    *down_view.definition,
+    up_profile,
+    down_profile,
     up_red_input,
     UP_DIFFUSER_TRANSMISSION_RED
   );
   float equivalent_up_nir = convert_up_input_to_down_profile(
-    *up_view.definition,
-    *down_view.definition,
+    up_profile,
+    down_profile,
     up_nir_input,
     UP_DIFFUSER_TRANSMISSION_NIR
   );
@@ -788,54 +641,6 @@ float calculate_raw_diffuser_ndvi(
     ? (nir_reflectance - red_reflectance) / denominator
     : 0.0f;
   return clampf(result, -1.0f, 1.0f);
-}
-
-bool choose_down_transfer_profile(
-  CalibrationProfileIndex up_profile_index,
-  float up_red_input,
-  float up_nir_input,
-  CalibrationProfileIndex &selected_down_profile,
-  bool &both_channels_in_range
-) {
-  const CalibrationProfileDefinition &up_profile = CALIBRATION_PROFILES[up_profile_index];
-  bool high_gain = up_profile.gain_setting == AS7265X_GAIN_16X;
-  CalibrationProfileIndex down_single = high_gain ? PROFILE_DOWN_255X1_G16 : PROFILE_DOWN_255X1;
-  CalibrationProfileIndex down_triple = high_gain ? PROFILE_DOWN_255X3_G16 : PROFILE_DOWN_255X3;
-  CalibrationProfileIndex candidates[2] = {
-    up_profile.exposures > 1 ? down_triple : down_single,
-    up_profile.exposures > 1 ? down_single : down_triple
-  };
-
-  bool have_fallback = false;
-  both_channels_in_range = false;
-  for (CalibrationProfileIndex candidate : candidates) {
-    if (!calibration_profile_is_valid(candidate)) continue;
-    if (!have_fallback) {
-      selected_down_profile = candidate;
-      have_fallback = true;
-    }
-
-    CalibrationProfileView down_view = get_calibration_profile_view(candidate);
-    float equivalent_red = convert_up_input_to_down_profile(
-      up_profile,
-      *down_view.definition,
-      up_red_input,
-      UP_DIFFUSER_TRANSMISSION_RED
-    );
-    float equivalent_nir = convert_up_input_to_down_profile(
-      up_profile,
-      *down_view.definition,
-      up_nir_input,
-      UP_DIFFUSER_TRANSMISSION_NIR
-    );
-    if (calibration_input_is_in_measured_range(down_view, RED_CHANNEL_INDEX, equivalent_red) &&
-        calibration_input_is_in_measured_range(down_view, NIR_CHANNEL_INDEX, equivalent_nir)) {
-      selected_down_profile = candidate;
-      both_channels_in_range = true;
-      return true;
-    }
-  }
-  return have_fallback;
 }
 
 void print_status_block() {
@@ -865,17 +670,9 @@ void print_status_block() {
   Serial.print("up_profile=");
   Serial.println(CALIBRATION_PROFILES[last_up_profile].id);
   Serial.print("up_calibration_mode=");
-  Serial.println(
-    last_up_used_down_transfer
-      ? (last_up_transfer_clamped ? "down-transfer-clamped" : "down-transfer")
-      : (last_up_transfer_clamped ? "up-table-clamped" : "up-table")
-  );
+  Serial.println("not-used");
   Serial.print("up_transfer_profile=");
-  Serial.println(
-    last_up_used_down_transfer
-      ? CALIBRATION_PROFILES[last_up_transfer_profile].id
-      : "none"
-  );
+  Serial.println("none");
   Serial.print("up_integration_cycles=");
   Serial.println(last_up_integration_cycles);
   Serial.print("up_exposures=");
@@ -900,39 +697,6 @@ void print_status_block() {
 void print_calibration_status() {
   Serial.print("Calibration source: ");
   Serial.println(calibration_source_name());
-}
-
-void print_caldump(const CalibrationProfileView &view) {
-  Serial.print("BEGIN_CALDUMP,");
-  Serial.println(view.definition->id);
-  for (size_t channel = 0; channel < AS7265X_CHANNEL_COUNT; ++channel) {
-    Serial.print(CHANNEL_LABELS[channel]);
-    for (size_t point = 0; point < AS7265X_CAL_POINT_COUNT; ++point) {
-      Serial.print(",");
-      Serial.print(view.inputs[channel][point], 6);
-    }
-    for (size_t point = 0; point < AS7265X_CAL_POINT_COUNT; ++point) {
-      Serial.print(",");
-      Serial.print(view.factors[channel][point], 6);
-    }
-    Serial.println();
-  }
-  Serial.print("END_CALDUMP,");
-  Serial.println(view.definition->id);
-}
-
-void print_caldarkdump(const CalibrationProfileView &view) {
-  Serial.print("BEGIN_CALDARK,");
-  Serial.println(view.definition->id);
-  for (size_t channel = 0; channel < AS7265X_CHANNEL_COUNT; ++channel) {
-    Serial.print(CHANNEL_LABELS[channel]);
-    Serial.print(",");
-    Serial.print(CHANNEL_WAVELENGTHS[channel]);
-    Serial.print(",");
-    Serial.println(view.dark_offsets[channel], 6);
-  }
-  Serial.print("END_CALDARK,");
-  Serial.println(view.definition->id);
 }
 
 void print_raw_profile_block(
@@ -988,87 +752,6 @@ void print_raw_channels_legacy(const char *label, const uint32_t values[AS7265X_
   }
 }
 
-bool parse_float_token(const char *token, float &value) {
-  char *end = nullptr;
-  value = strtof(token, &end);
-  return end != token && end != nullptr && *end == '\0';
-}
-
-bool parse_int_token(const char *token, int &value) {
-  char *end = nullptr;
-  long parsed = strtol(token, &end, 10);
-  if (end == token || end == nullptr || *end != '\0') return false;
-  value = (int)parsed;
-  return true;
-}
-
-void handle_calwrite_command(char *tokens[], size_t token_count) {
-  if (token_count != (3 + (2 * AS7265X_CAL_POINT_COUNT))) {
-    Serial.println("ERR calwrite usage");
-    return;
-  }
-
-  CalibrationProfileView view;
-  if (!get_calibration_profile_view(tokens[1], view)) {
-    Serial.println("ERR calwrite profile");
-    return;
-  }
-
-  int channel_index = -1;
-  if (!parse_int_token(tokens[2], channel_index) || channel_index < 0 || channel_index >= (int)AS7265X_CHANNEL_COUNT) {
-    Serial.println("ERR calwrite channel");
-    return;
-  }
-
-  for (size_t point = 0; point < AS7265X_CAL_POINT_COUNT; ++point) {
-    float parsed = 0.0f;
-    if (!parse_float_token(tokens[3 + point], parsed)) {
-      Serial.println("ERR calwrite input");
-      return;
-    }
-    view.inputs[channel_index][point] = parsed;
-  }
-
-  for (size_t point = 0; point < AS7265X_CAL_POINT_COUNT; ++point) {
-    float parsed = 0.0f;
-    if (!parse_float_token(tokens[3 + AS7265X_CAL_POINT_COUNT + point], parsed)) {
-      Serial.println("ERR calwrite factor");
-      return;
-    }
-    view.factors[channel_index][point] = parsed;
-  }
-
-  Serial.print("OK calwrite ");
-  Serial.print(view.definition->id);
-  Serial.print(" ");
-  Serial.println(channel_index);
-}
-
-void handle_darkwrite_command(char *tokens[], size_t token_count) {
-  if (token_count != 20) {
-    Serial.println("ERR darkwrite usage");
-    return;
-  }
-
-  CalibrationProfileView view;
-  if (!get_calibration_profile_view(tokens[1], view)) {
-    Serial.println("ERR darkwrite profile");
-    return;
-  }
-
-  for (size_t channel = 0; channel < AS7265X_CHANNEL_COUNT; ++channel) {
-    float parsed = 0.0f;
-    if (!parse_float_token(tokens[2 + channel], parsed)) {
-      Serial.println("ERR darkwrite value");
-      return;
-    }
-    view.dark_offsets[channel] = parsed;
-  }
-
-  Serial.print("OK darkwrite ");
-  Serial.println(view.definition->id);
-}
-
 bool process_serial_command(const String &raw_command) {
   String command = raw_command;
   command.trim();
@@ -1100,61 +783,10 @@ bool process_serial_command(const String &raw_command) {
     print_calibration_status();
     return false;
   }
-  if (strcmp(tokens[0], "calsave") == 0) {
-    if (save_calibration_to_flash()) {
-      Serial.println("OK calsave");
-    } else {
-      Serial.println("ERR calsave");
-    }
-    return false;
-  }
-  if (strcmp(tokens[0], "calwrite") == 0) {
-    handle_calwrite_command(tokens, token_count);
-    return false;
-  }
-  if (strcmp(tokens[0], "darkwrite") == 0) {
-    handle_darkwrite_command(tokens, token_count);
-    return false;
-  }
-  if (strcmp(tokens[0], "calvalid") == 0 && token_count == 3) {
-    CalibrationProfileIndex profile_index;
-    int valid = 0;
-    if (!get_calibration_profile_index(tokens[1], profile_index) ||
-        !parse_int_token(tokens[2], valid) || (valid != 0 && valid != 1)) {
-      Serial.println("ERR calvalid usage");
-      return false;
-    }
-    if (valid) calibration_valid_mask |= (uint16_t)(1U << profile_index);
-    else calibration_valid_mask &= (uint16_t)~(1U << profile_index);
-    Serial.print("OK calvalid ");
-    Serial.print(tokens[1]);
-    Serial.print(" ");
-    Serial.println(valid);
-    return false;
-  }
   if (strcmp(tokens[0], "capture") == 0 && token_count == 2) {
     handle_capture_command(tokens[1]);
     return false;
   }
-  if (strcmp(tokens[0], "caldump") == 0 && token_count == 2) {
-    CalibrationProfileView view;
-    if (!get_calibration_profile_view(tokens[1], view)) {
-      Serial.println("ERR caldump profile");
-      return false;
-    }
-    print_caldump(view);
-    return false;
-  }
-  if (strcmp(tokens[0], "caldarkdump") == 0 && token_count == 2) {
-    CalibrationProfileView view;
-    if (!get_calibration_profile_view(tokens[1], view)) {
-      Serial.println("ERR caldarkdump profile");
-      return false;
-    }
-    print_caldarkdump(view);
-    return false;
-  }
-
   Serial.print("ERR unknown ");
   Serial.println(command);
   return false;
@@ -1302,39 +934,6 @@ void drawCenteredTextAtX(
   tft.setCursor(centerX - ((int16_t)w / 2), centerY - ((int16_t)h / 2));
   tft.setTextColor(color);
   tft.print(text);
-}
-
-String formatMeasurementValue(float value) {
-  float magnitude = fabsf(value);
-  if (magnitude >= 100000.0f) {
-    char buffer[16];
-    snprintf(buffer, sizeof(buffer), "%.1e", (double)value);
-    return String(buffer);
-  }
-  if (magnitude >= 1000.0f) return String(value, 0);
-  if (magnitude >= 100.0f) return String(value, 1);
-  return String(value, 2);
-}
-
-void drawMeasurementValues() {
-  drawCenteredTextAtX("RAW", 78, 101, 1, GREY);
-  drawCenteredTextAtX("CAL", 180, 101, 1, GREY);
-
-  drawCenteredTextAtX("UI", 13, 120, 1, CYAN);
-  drawCenteredTextAtX(formatMeasurementValue((float)last_raw_iU), 78, 120, 2, WHITE);
-  drawCenteredTextAtX(formatMeasurementValue(last_calc_iU), 180, 120, 2, WHITE);
-
-  drawCenteredTextAtX("UV", 13, 142, 1, CYAN);
-  drawCenteredTextAtX(formatMeasurementValue((float)last_raw_vU), 78, 142, 2, WHITE);
-  drawCenteredTextAtX(formatMeasurementValue(last_calc_vU), 180, 142, 2, WHITE);
-
-  drawCenteredTextAtX("DI", 13, 164, 1, GREEN);
-  drawCenteredTextAtX(formatMeasurementValue((float)last_raw_iD), 78, 164, 2, WHITE);
-  drawCenteredTextAtX(formatMeasurementValue(last_calc_iD), 180, 164, 2, WHITE);
-
-  drawCenteredTextAtX("DV", 13, 186, 1, GREEN);
-  drawCenteredTextAtX(formatMeasurementValue((float)last_raw_vD), 78, 186, 2, WHITE);
-  drawCenteredTextAtX(formatMeasurementValue(last_calc_vD), 180, 186, 2, WHITE);
 }
 
 void drawNDVIScreen() {
@@ -1595,105 +1194,30 @@ bool take_measurements_and_compute_ndvi() {
   bool down_low = raw_signal_is_low(down_values, DOWN_MIN_RAW_SIGNAL);
   last_measurement_low_light = up_low || down_low;
 
-  CalibrationProfileView up_view = get_calibration_profile_view(last_up_profile);
-  CalibrationProfileView down_view = get_calibration_profile_view(last_down_profile);
+  const CalibrationProfileDefinition &down_profile = CALIBRATION_PROFILES[last_down_profile];
 
   uint32_t iU_raw = up_values[RED_CHANNEL_INDEX];
   uint32_t vU_raw = up_values[NIR_CHANNEL_INDEX];
 
   uint32_t iD_raw = down_values[RED_CHANNEL_INDEX];
   uint32_t vD_raw = down_values[NIR_CHANNEL_INDEX];
-  last_raw_iU = iU_raw;
-  last_raw_vU = vU_raw;
-  last_raw_iD = iD_raw;
-  last_raw_vD = vD_raw;
-  // Use both measured UP channels directly. When either channel falls outside
-  // the selected UP table, remove the characterised diffuser attenuation and
-  // transfer both values through a compatible DOWN table. All table lookups
-  // are bounded by measured points; factors are never extrapolated.
-  float iU_input = dark_corrected_calibration_input(up_view, RED_CHANNEL_INDEX, (float)iU_raw);
-  float vU_input = dark_corrected_calibration_input(up_view, NIR_CHANNEL_INDEX, (float)vU_raw);
-  float iD_input = dark_corrected_calibration_input(down_view, RED_CHANNEL_INDEX, (float)iD_raw);
-  float vD_input = dark_corrected_calibration_input(down_view, NIR_CHANNEL_INDEX, (float)vD_raw);
+  float iU_input = dark_corrected_calibration_input(last_up_profile, RED_CHANNEL_INDEX, (float)iU_raw);
+  float vU_input = dark_corrected_calibration_input(last_up_profile, NIR_CHANNEL_INDEX, (float)vU_raw);
+  float iD_input = dark_corrected_calibration_input(last_down_profile, RED_CHANNEL_INDEX, (float)iD_raw);
+  float vD_input = dark_corrected_calibration_input(last_down_profile, NIR_CHANNEL_INDEX, (float)vD_raw);
   last_raw_diffuser_iU = iU_input;
   last_raw_diffuser_vU = vU_input;
   last_raw_diffuser_iD = iD_input;
   last_raw_diffuser_vD = vD_input;
   raw_diffuser_ndvi = calculate_raw_diffuser_ndvi(
-    up_view,
-    down_view,
+    up_profile,
+    down_profile,
     iU_input,
     vU_input,
     iD_input,
     vD_input
   );
   message_raw_diffuser_NDVI = String(raw_diffuser_ndvi, 2);
-  bool up_red_in_range = calibration_input_is_in_measured_range(
-    up_view,
-    RED_CHANNEL_INDEX,
-    iU_input
-  );
-  bool up_nir_in_range = calibration_input_is_in_measured_range(
-    up_view,
-    NIR_CHANNEL_INDEX,
-    vU_input
-  );
-
-  last_up_used_down_transfer = false;
-  last_up_transfer_clamped = false;
-  float iU = 0.0f;
-  float vU = 0.0f;
-  if (!up_red_in_range || !up_nir_in_range) {
-    CalibrationProfileIndex transfer_profile;
-    bool transfer_in_range = false;
-    if (choose_down_transfer_profile(
-          last_up_profile,
-          iU_input,
-          vU_input,
-          transfer_profile,
-          transfer_in_range
-        )) {
-      CalibrationProfileView transfer_view = get_calibration_profile_view(transfer_profile);
-      float equivalent_iU = convert_up_input_to_down_profile(
-        *up_view.definition,
-        *transfer_view.definition,
-        iU_input,
-        UP_DIFFUSER_TRANSMISSION_RED
-      );
-      float equivalent_vU = convert_up_input_to_down_profile(
-        *up_view.definition,
-        *transfer_view.definition,
-        vU_input,
-        UP_DIFFUSER_TRANSMISSION_NIR
-      );
-      iU = apply_calibration_input(transfer_view, RED_CHANNEL_INDEX, equivalent_iU);
-      vU = apply_calibration_input(transfer_view, NIR_CHANNEL_INDEX, equivalent_vU);
-      last_up_used_down_transfer = true;
-      last_up_transfer_clamped = !transfer_in_range;
-      last_up_transfer_profile = transfer_profile;
-    } else {
-      iU = apply_calibration_input(up_view, RED_CHANNEL_INDEX, iU_input);
-      vU = apply_calibration_input(up_view, NIR_CHANNEL_INDEX, vU_input);
-      last_up_transfer_clamped = true;
-    }
-  } else {
-    iU = apply_calibration_input(up_view, RED_CHANNEL_INDEX, iU_input);
-    vU = apply_calibration_input(up_view, NIR_CHANNEL_INDEX, vU_input);
-  }
-  float iD = apply_channel_calibration(down_view, RED_CHANNEL_INDEX, (float)iD_raw);
-  float vD = apply_channel_calibration(down_view, NIR_CHANNEL_INDEX, (float)vD_raw);
-  last_calc_iU = iU;
-  last_calc_vU = vU;
-  last_calc_iD = iD;
-  last_calc_vD = vD;
-
-  float red_refl = (iU > 0.0f) ? (iD / iU) : 0.0f;
-  float nir_refl = (vU > 0.0f) ? (vD / vU) : 0.0f;
-  float denom = nir_refl + red_refl;
-  ndvi = (denom > 0.0f) ? ((nir_refl - red_refl) / denom) : 0.0f;
-  ndvi = clampf(ndvi, -1.0f, 1.0f);
-
-  message_NDVI = String(ndvi, 2);
   measurement_sequence++;
   last_measurement_ms = millis();
 
@@ -1709,16 +1233,6 @@ bool take_measurements_and_compute_ndvi() {
   Serial.println(sensor_gain_label(last_up_gain_setting));
   Serial.print("UP profile: ");
   Serial.println(up_profile.id);
-  Serial.print("UP calibration mode: ");
-  if (last_up_used_down_transfer) {
-    Serial.print(last_up_transfer_clamped ? "down-transfer-clamped (" : "down-transfer (");
-    Serial.print(CALIBRATION_PROFILES[last_up_transfer_profile].id);
-    Serial.println(")");
-  } else {
-    Serial.println(last_up_transfer_clamped ? "up-table-clamped" : "up-table");
-  }
-  Serial.print("Calibrated NDVI: ");
-  Serial.println(message_NDVI);
   Serial.print("Raw + diffuser NDVI: ");
   Serial.println(message_raw_diffuser_NDVI);
   print_raw_channels_legacy("UP raw:", up_values);
@@ -1764,10 +1278,10 @@ void setup() {
 
   loadDeviceIdentity();
 
+  // Read legacy metadata before BLE allocates heap for its stack.
+  load_calibration_from_flash();
   setupBLE();
   i2c_init_buses_once();
-  initialize_calibration_profiles_from_header();
-  load_calibration_from_flash();
 
   up_ok   = try_init_up_sensor();
   down_ok = try_init_down_sensor();
@@ -1794,11 +1308,13 @@ void setup() {
 }
 
 void loop() {
-  serviceBLE();
+  if (!blePausedForPortal) serviceBLE();
   if (portalActive()) {
     String previousMessage = portalMessage();
     portalLoop();
     if (!portalActive()) {
+      // Reboot restores the normal BLE service and measurement screen cleanly.
+      if (blePausedForPortal) { ESP.restart(); return; }
       if (up_ok && down_ok) drawNDVIScreen();
       else drawStatusScreen();
     } else if (portalMessage() != previousMessage) {
@@ -1827,6 +1343,7 @@ void loop() {
       if (portalActive()) {
         portalEnd();
         buttonActionHandled = true;
+        if (blePausedForPortal) { ESP.restart(); return; }
         if (up_ok && down_ok) drawNDVIScreen();
         else drawStatusScreen();
       }
@@ -1837,8 +1354,16 @@ void loop() {
   if (buttonDown && !buttonActionHandled && !portalActive() &&
       now - buttonPressStartedAt >= PORTAL_HOLD_MS) {
     buttonActionHandled = true;
+    // BLE and TLS compete for the ESP32's heap; BLE resumes after setup exits.
+    blePausedForPortal = true;
+    BLEDevice::deinit(false);
+    ble_status_characteristic = nullptr;
+    ble_service = nullptr;
+    ble_server = nullptr;
+    ble_set_connected(false);
+    Serial.printf("Setup heap after BLE pause: %u\n", ESP.getFreeHeap());
     if (portalBegin(BLE_DEVICE_NAME, FIRMWARE_VERSION)) drawPortalScreen();
-    else Serial.println("ERR setup Wi-Fi could not start");
+    else ESP.restart();
   }
   bool serial_trigger = poll_serial_commands();
 

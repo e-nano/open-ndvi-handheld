@@ -7,9 +7,9 @@ This document describes the active PlatformIO firmware in
 ## Low-light measurement profiles
 
 Both AS7265x sensors start each profile at 3.7x gain. If either NDVI band is
-low, firmware retries that profile at 16x before increasing integration. Each
-gain has a separate calibration table; no gain normalisation is applied.
-Uncalibrated 16x profiles are skipped.
+low, firmware retries that profile at 16x before increasing integration.
+The saved profile-valid mask controls 16x eligibility. Saturated 16x profiles
+are skipped; the NDVI calculation normalises the selected gains.
 
 An AS7265x integration cycle is approximately 2.8 ms. Six-channel one-shot
 mode converts two banks, so one exposure takes approximately:
@@ -32,11 +32,10 @@ The adaptive UP sequence is:
 1. Capture `up_100x1` at 3.7x, then at 16x if raw red or NIR is below 100.
 2. If still low, repeat that gain sequence for `up_255x1`.
 3. If still low, repeat it for `up_255x3`.
-4. Use only the final selected profile and gain for calibration and NDVI.
+4. Use only the final selected profile and gain for NDVI.
 
 Level 3 is three separate 255-cycle exposures added together. It is a sum, not
-an average. Each profile therefore has its own calibration and dark-offset
-data.
+an average. Each profile can have its own saved red/NIR dark offsets.
 
 The DOWN sensor starts with `down_255x1` at 3.7x, tries it at 16x if low, then
 does the same for `down_255x3` if needed. DOWN escalation is based on the DOWN
@@ -58,31 +57,16 @@ confidence.
 
 Automatic 16x attempts can be disabled reversibly by setting
 `MANTI_ENABLE_16X_CALIBRATION=0` in `firmware/src/manti_features.h` and rebuilding.
-Stored 16x tables are retained.
-
-## Out-of-range UP calibration
-
-- Calibration factors interpolate inside measured ranges and clamp at their
-  endpoints; they are never extrapolated.
-- If both final UP I and V inputs are in the selected UP table range, the UP
-  table is used normally.
-- If either is outside, both measured UP channels are divided by their
-  characterised diffuser transmissions (`I=0.0470`, `V=0.0564`) and normalised
-  for integration cycles, exposure count, and gain.
-- Firmware then uses a valid same-gain DOWN table, preferring the same exposure
-  count and a profile that contains both converted inputs.
-- If no DOWN range contains both, the preferred DOWN table is endpoint-clamped.
-  If no compatible DOWN table is valid, the selected UP table is clamped.
-- USB serial status exposes `up_calibration_mode` and `up_transfer_profile`.
-- This calibrated calculation remains available as a USB serial diagnostic. The
-  displayed and BLE `NDVI` result uses the RAW+DF calculation described below.
+The saved `caldata` partition is unchanged.
 
 ## Displayed NDVI calculation
 
 The displayed result and BLE `NDVI` field use the dark-corrected RAW+DF inputs.
 The UP inputs are divided by the characterised diffuser transmission and
 normalised to the selected DOWN integration, exposure, and gain profile. No
-channel calibration factor is applied. The four inputs are included in BLE as
+channel calibration factor is applied. Saved schema-5 factor/input tables are
+ignored; only the profile-valid mask and red/NIR dark offsets are read at boot.
+The four inputs are included in BLE as
 `RUI`, `RUV`, `RDI`, and `RDV`.
 
 ## BLE GATT interface
@@ -253,8 +237,9 @@ portable.
 - There is no device identifier in the payload.
 - There is no protocol-version field.
 - There is no authentication, encryption requirement, or bonding.
-- The four dark-corrected NDVI-band inputs are available through BLE. The other
-  raw spectral channels and calibration tables remain USB-serial only.
+- The four dark-corrected NDVI-band inputs are available through BLE. All 18
+  raw spectral channels can be exported with serial `capture <profile>` for
+  diffuser analysis outside the product.
 
 Apps should timestamp records on receipt, associate the connection with their
 own device identifier, ignore unknown fields, and retain the full original

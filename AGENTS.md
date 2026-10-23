@@ -27,9 +27,14 @@ installation is started manually in its portal.
    intentional change; a successful build alone does not prove calibration or
    measurement equivalence. If those areas changed, validate on one device and
    compare its calibration backup and post-update status before fleet use.
+   Current firmware reads only the schema-5 profile-valid mask and red/NIR dark
+   offsets; factor tables are not used for display or BLE NDVI. Keep raw serial
+   `capture <profile>` available for diffuser characterisation outside the unit.
 4. Run `pio run` from `firmware/`, check `git diff --check`, and run relevant
    checks for the changed code. Compare the live TLS chains for the GitHub
-   manifest and redirected release assets with `firmware/src/github_roots.h`;
+   manifest and redirected release assets with the flash-resident roots in
+   `firmware/data/cert/x509_crt_bundle.bin` (regenerate with
+   `firmware/tools/build_ca_bundle.py` when needed);
    a missing root makes the portal report a manifest request failure. Do not
    use full-chip erase during deployment.
 5. Commit only the reviewed files. Push the commit to `origin/main` (or merge
@@ -58,6 +63,8 @@ after the checks below. A request for instructions alone does not. Do the
 read-only checks and backup before asking the user to decide a specific
 calibration or hardware incompatibility. Never treat "deploy" as permission to
 flash a device.
+The same procedure applies to v0.3.2 devices reporting `TLS -32512`: their
+OTA client runs out of memory before it can download the repair.
 
 1. Ask only for facts you cannot discover: which physical unit should be
    updated, whether its USB data cable is connected to the agent's computer or

@@ -9,13 +9,13 @@
 - `src/main.cpp`
   - Main ESP32 application
 - `src/as7265x_calibration_data.h`
-  - Embedded calibration tables
+  - Legacy blob dimensions used when reading saved profile metadata
 - `src/manti_features.h`
   - Reversible runtime feature switches
 - `src/portal_ota.cpp`
   - Device Wi-Fi portal, network setup, and manual OTA update
-- `src/github_roots.h`
-  - TLS trust roots used for GitHub Releases
+- `data/cert/x509_crt_bundle.bin`
+  - Flash-resident TLS trust roots used for GitHub Releases
 - `lib/SparkFun_Spectral_Triad_AS7265X/`
   - Local patched AS7265X library used by the firmware
 - `ndvi_handheld/ndvi_handheld.ino`
@@ -29,7 +29,8 @@
   - ST7789 display output
   - Battery monitoring
   - BLE status service
-  - Calibration storage via `Preferences` in a dedicated 64 KB `caldata` NVS partition
+  - Read-only access to profile flags and I/V dark offsets in the dedicated
+    64 KB `caldata` NVS partition
 
 ## Wi-Fi portal and manual updates
 
@@ -38,7 +39,8 @@
   released.
 - Hold the measure button for 5 seconds during normal operation to open setup.
   Release it, then press it again to close setup and return to the measurement
-  screen. The portal and Wi-Fi turn off when setup closes.
+  screen. BLE pauses during setup to free memory for secure updates. Closing
+  setup restarts the device, restores BLE, and turns off the portal and Wi-Fi.
 - Only in setup mode, the screen shows the device Wi-Fi name, a fresh 8-character WPA2 password, and
   `http://192.168.4.1/`. Connect a phone to that network and open the address
   if the captive-portal popup does not appear.
@@ -53,8 +55,9 @@
   inactive app slot and verifies its size and SHA-256 against `manifest.txt`
   before selecting it for boot. Use USB power during an update.
 - GitHub must be reachable and its TLS certificate must chain to a root in
-  `src/github_roots.h`. The portal is only served over the device's password
-  protected Wi-Fi network; it is not served on the joined LAN.
+  `data/cert/x509_crt_bundle.bin`. The bundle stays in flash to leave enough
+  RAM for TLS alongside the setup Wi-Fi. The portal is served on the
+  password-protected device network; it is not served on the joined LAN.
 - The bootloader keeps the previous app slot. The new app confirms its first
   boot after display, BLE, calibration, and sensor initialisation completes.
 
@@ -63,6 +66,9 @@
 Existing devices need one USB flash of this firmware and partition table before
 OTA is available. `app0`, `spiffs`, `coredump`, and `caldata` retain their old
 offsets. The new `app1` occupies `0x500000..0x7fffff` on the 8 MB Feather V2.
+Devices running v0.3.2 that report `TLS -32512` also need a USB flash of a
+release containing the flash-resident CA bundle; that version cannot download
+its own OTA repair.
 Back up each device's calibration before the USB flash and do not use a full
 flash erase. The first boot stores the USB-provisioned device number in default
 NVS; generic release images then preserve that number. A new board flashed
@@ -70,10 +76,17 @@ directly with a generic image uses its factory MAC in the BLE and Wi-Fi name.
 Before flashing, send `status` over USB serial and confirm
 `calibration_schema=5`, `calibration_source=flash`, and the expected
 `calibration_valid_mask`. This firmware ignores older calibration schemas;
-their flash bytes may remain present but their factors will not be loaded.
+their flash bytes remain present but are not used for measurements.
 
 ### Publishing an update
 
+- The checked-in CA bundle contains 121 roots from the host's
+  `/etc/ssl/certs/ca-certificates.crt` (input SHA-256
+  `6602a85a36afc2e51c66a0df5ae3d383c5b7c2fed93339ccef7d37e01faf09e8`).
+  To refresh it from `firmware/`, run
+  `python3 tools/build_ca_bundle.py <root-store.pem> data/cert/x509_crt_bundle.bin`;
+  this needs Python `cryptography`. Verify the live GitHub and release asset
+  chains afterward.
 - Merge and review the firmware change first.
 - Push a version tag such as `v0.3.0`. The `Release firmware` workflow builds
   the active PlatformIO project, embeds the tag as its version, and publishes
@@ -100,8 +113,12 @@ their flash bytes may remain present but their factors will not be loaded.
 
 ## Calibration profiles
 
-- Calibration schema 5 stores separate 3.7x and 16x tables and dark offsets.
-- Runtime keeps full 16x counts and applies the matching 16x table.
+- Existing schema-5 `caldata` blobs remain untouched. At boot, firmware reads
+  the profile-valid mask and red/NIR dark offsets, then discards the legacy
+  factor and input tables from RAM.
+- The displayed and BLE NDVI calculation uses those dark offsets and the fixed
+  diffuser transmission constants (`I=0.0470`, `V=0.0564`). It scales for the
+  selected integration cycles, exposures, and gain. No factor curve is applied.
 - The five 3.7x profiles are:
   - `up_100x1`
   - `up_255x1`
@@ -109,17 +126,15 @@ their flash bytes may remain present but their factors will not be loaded.
   - `down_255x1`
   - `down_255x3`
 - Five matching 16x profiles append `_g16` to those IDs.
-- Factors interpolate only inside measured ranges and clamp at the endpoints;
-  runtime does not extrapolate calibration curves.
-- UP uses its selected table while both I and V are in range. If either is out
-  of range, both measured channels are corrected through a matching-gain DOWN
-  table after removing the characterised diffuser attenuation (`I=0.0470`,
-  `V=0.0564`) and normalising integration and exposure count.
-- Serial status reports `up_calibration_mode` and `up_transfer_profile`.
+- Serial `capture <profile>` still exports all 18 raw channels for external
+  diffuser characterisation. The old factor-table write/dump commands and
+  separate serial calibrated-NDVI calculation are removed.
+- Serial status retains `up_calibration_mode=not-used` and
+  `up_transfer_profile=none` for compatibility.
 - `CVM=31` means all five 3.7x profiles are valid; `CVM=1023` means all ten
   dual-gain profiles are valid.
-- Schema-2, schema-3 and schema-4 flash tables are deliberately ignored.
-  All profiles remain invalid until fresh schema-5 tables are calibrated and saved.
+- Schema-2, schema-3 and schema-4 flash blobs are ignored. Without a valid
+  schema-5 blob, profile flags and dark offsets default to zero.
 
 ## Reversing or disabling 16x
 
@@ -129,8 +144,8 @@ Set this feature flag in `src/manti_features.h`, then rebuild:
 #define MANTI_ENABLE_16X_CALIBRATION 0
 ```
 
-This disables automatic 16x measurement attempts. It does not delete 16x
-tables, and forced `_g16` captures remain available to the calibration tool.
+This disables automatic 16x measurement attempts. It does not alter saved
+`caldata`; forced `_g16` captures remain available over serial.
 
 ## Build
 

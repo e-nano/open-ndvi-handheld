@@ -1,6 +1,7 @@
 # Compiled Arduino/PlatformIO files
 *.hex
 *.bin
+!firmware/data/cert/x509_crt_bundle.bin
 *.elf
 *.o
 *.a

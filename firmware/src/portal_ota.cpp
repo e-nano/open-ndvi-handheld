@@ -1,5 +1,4 @@
 #include "portal_ota.h"
-#include "github_roots.h"
 
 #include <DNSServer.h>
 #include <HTTPClient.h>
@@ -8,10 +7,13 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include <time.h>
 
 namespace {
+// The trust bundle stays in flash; the TLS client only keeps its index in RAM.
+extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
 constexpr char WIFI_NAMESPACE[] = "mantwifi";
 constexpr char MANIFEST_URL[] =
   "https://github.com/e-nano/open-ndvi-handheld/releases/latest/download/manifest.txt";
@@ -271,8 +273,10 @@ void checkUpdate() {
   } else if (!secureClockReady()) {
     message = "Could not set the clock for a secure connection.";
   } else {
+    Serial.printf("OTA heap before TLS: free=%u largest=%u\n", ESP.getFreeHeap(),
+                  heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     WiFiClientSecure client;
-    client.setCACert(GITHUB_ROOT_CAS);
+    client.setCACertBundle(rootca_crt_bundle_start);
     HTTPClient http;
     http.setTimeout(15000);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -282,8 +286,22 @@ void checkUpdate() {
       int status = http.GET();
       int size = http.getSize();
       if (status != 200) {
-        message = "Manifest request failed (" + String(status) + ").";
-        Serial.printf("OTA manifest GET: %s\n", http.errorToString(status).c_str());
+        char tlsErrorText[96] = {};
+        int tlsError = client.lastError(tlsErrorText, sizeof(tlsErrorText));
+        IPAddress resolved;
+        bool dnsOk = WiFi.hostByName("github.com", resolved);
+        String location = http.getLocation();
+        int hostStart = location.indexOf("://");
+        String redirectHost;
+        if (hostStart >= 0) {
+          hostStart += 3;
+          int hostEnd = location.indexOf('/', hostStart);
+          redirectHost = location.substring(hostStart, hostEnd < 0 ? location.length() : hostEnd);
+        }
+        message = "Manifest request failed (" + String(status) + ", TLS " + String(tlsError) + ").";
+        Serial.printf("OTA manifest HTTP=%d TLS=%d %s DNS=%d IP=%s redirect=%s WiFi=%d heap=%u time=%ld\n",
+                      status, tlsError, tlsErrorText, dnsOk, resolved.toString().c_str(),
+                      redirectHost.c_str(), WiFi.status(), ESP.getFreeHeap(), (long)time(nullptr));
       } else if (size < 0 || size > 1024) {
         message = "Invalid manifest response size (" + String(size) + ").";
       } else {
@@ -306,7 +324,7 @@ void installUpdate() {
     return;
   }
   WiFiClientSecure client;
-  client.setCACert(GITHUB_ROOT_CAS);
+  client.setCACertBundle(rootca_crt_bundle_start);
   HTTPClient http;
   http.setTimeout(20000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
