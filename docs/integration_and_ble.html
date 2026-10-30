@@ -53,8 +53,8 @@
         <h2>Three UP integration levels</h2>
         <p>
           Normal measurements use 3.7x gain. Low red or NIR counts cause longer
-          integration or three summed exposures. Optional 16x retries require a
-          valid saved 16x profile. One six-channel exposure takes approximately
+          integration or three summed exposures. When enabled, low raw counts
+          trigger 16x retries without saved profile flags. One six-channel exposure takes approximately
           <code>2 × 2.8 ms × (cycles + 1)</code> because two channel banks are converted.
         </p>
         <div class="doc-table-wrap">
@@ -78,7 +78,7 @@
         <div class="doc-notice">
           Level 3 adds three separate exposures; it does not average them. Each
           profile can have its own saved red/NIR dark offsets. Without saved
-          data, offsets are zero and 3.7x measurement still works. Eligible
+          data, offsets are zero and both gains remain available. Enabled
           16x profiles can be tried between the steps above. Legacy factor
           tables are ignored by the displayed and BLE result.
         </div>
@@ -98,7 +98,7 @@
           <p>
             DOWN starts with <code>down_255x1</code> at 3.7x. If raw 645 nm or
             810 nm is below 100 counts, it captures <code>down_255x3</code>
-            at 3.7x. Eligible 16x profiles can be tried between these steps.
+            at 3.7x. Enabled 16x profiles can be tried between these steps.
           </p>
           <ul>
             <li>255 × 1: approximately 1.434 s</li>
@@ -116,7 +116,7 @@
           </p>
           <p>
             Retries are cumulative. Trying every 3.7x profile takes about
-            12 seconds of sensor conversion time; eligible 16x retries can
+            12 seconds of sensor conversion time; enabled 16x retries can
             increase this to about 24 seconds.
           </p>
         </article>
@@ -172,7 +172,8 @@
         <p>
           <code>CVM</code> bits 0–4 map to <code>up_100x1</code>,
           <code>up_255x1</code>, <code>up_255x3</code>, <code>down_255x1</code>,
-          and <code>down_255x3</code>. Bits 5–9 mark their 16x counterparts.
+          and <code>down_255x3</code>. Bits 5–9 mark their 16x counterparts;
+          these saved flags do not gate 16x retries.
           A value of 0 means no saved flags and does not invalidate 3.7x
           measurements. A value of 1023 marks all ten profiles valid.
         </p>
@@ -185,7 +186,7 @@
           <ul>
             <li>Require <code>SEQ &gt; 0</code> and a new sequence number.</li>
             <li>Require <code>UP=1</code>, <code>DN=1</code>, and <code>LOW=0</code>.</li>
-            <li>Use <code>CVM</code> to interpret 16x eligibility; do not reject 3.7x results when <code>CVM=0</code>.</li>
+            <li><code>CVM=0</code> does not block either gain. Use <code>UG</code>, <code>DG</code>, and <code>LOW</code> to assess the selected reading.</li>
             <li>Require relevant <code>SAT</code> bits to be clear.</li>
             <li>Store the full payload with the NDVI result.</li>
           </ul>

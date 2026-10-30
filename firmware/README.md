@@ -100,9 +100,9 @@ remain present but are not used for measurements.
 
 - Normal measurements use 3.7x gain. Low signals cause longer integration and
   then three summed exposures. No saved calibration blob is needed for this path.
-- An optional 16x retry occurs only when the build enables it **and** the
-  matching 16x profile is marked valid in a schema-5 `caldata` blob. With
-  `calibration_valid_mask=0`, gain stays at 3.7x.
+- When the build enables 16x, low raw red or NIR counts trigger a 16x retry
+  for the same integration profile. This also works with
+  `calibration_valid_mask=0`; saved profile flags do not gate it.
 - UP uses 100x1, 255x1, then 255x3 profiles as required.
 - DOWN uses 255x1, then 255x3 profiles as required.
 - In normal light, DOWN captures one exposure.
@@ -138,7 +138,8 @@ remain present but are not used for measurements.
   separate serial calibrated-NDVI calculation are removed.
 - Serial status retains `up_calibration_mode=not-used` and
   `up_transfer_profile=none` for compatibility.
-- `CVM=0` means no stored profile flags; normal 3.7x measurements still work.
+- `CVM=0` means no stored profile flags; automatic 3.7x and 16x measurements
+  still work.
   `CVM=31` marks all five 3.7x profiles valid; `CVM=1023` marks all ten.
 - Schema-2, schema-3 and schema-4 flash blobs are ignored. Without a valid
   schema-5 blob, profile flags and dark offsets default to zero.

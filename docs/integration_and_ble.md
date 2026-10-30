@@ -9,9 +9,9 @@ This document describes the active PlatformIO firmware in
 Normal measurements use 3.7x gain on both AS7265x sensors. Low red or NIR
 counts cause longer integration or three summed exposures. A new device without
 stored calibration reports `CVM=0` and still calculates NDVI.
-The optional 16x retry requires both a build with 16x enabled and a valid
-saved 16x profile bit. Saturated 16x results are skipped; NDVI normalises
-the gain if a 16x result is selected.
+When the build enables 16x, low raw red or NIR counts trigger a 16x retry
+without requiring a saved profile bit. Saturated 16x results are skipped;
+NDVI normalises the gain if a 16x result is selected.
 
 An AS7265x integration cycle is approximately 2.8 ms. Six-channel one-shot
 mode converts two banks, so one exposure takes approximately:
@@ -34,14 +34,14 @@ The adaptive UP sequence is:
 1. Capture `up_100x1` at 3.7x.
 2. If raw red or NIR is below 100, capture `up_255x1` at 3.7x.
 3. If still low, capture `up_255x3` at 3.7x.
-4. Use only the final selected profile for NDVI. When an eligible 16x profile
-   exists, firmware can retry at 16x between these 3.7x steps.
+4. Use only the final selected profile for NDVI. With 16x enabled, firmware
+   can retry at 16x between these 3.7x steps.
 
 Level 3 is three separate 255-cycle exposures added together. It is a sum, not
 an average. Each profile can have its own saved red/NIR dark offsets.
 
 The DOWN sensor starts with `down_255x1` at 3.7x, then captures `down_255x3`
-if low. DOWN escalation depends on its own signal. An eligible 16x profile
+if low. DOWN escalation depends on its own signal. An enabled 16x profile
 can be tried between the 3.7x steps; a saturated 16x result is not selected.
 
 | DOWN profile | Cycles | Exposures | Approx. integration |
@@ -50,7 +50,7 @@ can be tried between the 3.7x steps; a saturated 16x result is not selected.
 | `down_255x3` | 255 | 3, summed | 4.301 s |
 
 Retries are cumulative. Trying every 3.7x profile takes about 12 seconds of
-sensor conversion time; eligible 16x retries can increase this to about 24
+sensor conversion time; enabled 16x retries can increase this to about 24
 seconds. Typical measurements stop earlier.
 
 `LOW=1` means the final UP or DOWN profile has a direct raw I or V count below
@@ -69,8 +69,8 @@ The UP inputs are divided by the characterised diffuser transmission and
 normalised to the selected DOWN integration, exposure, and gain profile. No
 channel calibration factor is applied. Saved schema-5 factor/input tables are
 ignored; only the profile-valid mask and red/NIR dark offsets are read at boot.
-Without a valid blob, dark offsets default to zero and 3.7x measurements
-remain available. The fixed diffuser values describe the top optical path;
+Without a valid blob, dark offsets default to zero and both gains remain
+available. The fixed diffuser values describe the top optical path;
 checking them and the resulting NDVI against references assesses accuracy.
 The four inputs are included in BLE as
 `RUI`, `RUV`, `RDI`, and `RDV`.
@@ -142,11 +142,13 @@ with `(SAT & 1) != 0` for UP and `(SAT & 2) != 0` for DOWN.
 | 8 | 256 | `down_255x1_g16` |
 | 9 | 512 | `down_255x3_g16` |
 
-`CVM=0` means no profiles are marked valid; it does not invalidate 3.7x
+`CVM=0` means no profiles are marked valid; it does not block either gain's
 measurements. Check `calibration_source` over serial to determine whether a
 schema-5 blob supplied dark offsets. `CVM=31` marks all five 3.7x profiles
 valid. `CVM=1023` marks
-all ten dual-gain profiles valid. Bits 5–9 permit the corresponding 16x retry.
+all ten dual-gain profiles valid. Bits 5–9 record legacy calibration status;
+they do not gate 16x retries. Serial `calibration_16x_ready` reports whether
+all five saved 16x bits are set, not whether runtime 16x is available.
 
 ### Validating a reading
 
@@ -156,7 +158,6 @@ Treat the payload as a usable measurement only when:
 - `SEQ` differs from the last record your app stored.
 - `UP=1` and `DN=1`.
 - `LOW=0`.
-- If `UG` or `DG` is 16.00, its selected 16x profile bit is present in `CVM`.
 - The relevant `SAT` bits are clear.
 
 Keep the raw status record alongside the NDVI value so later analysis can see

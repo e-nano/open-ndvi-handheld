@@ -30,8 +30,9 @@ installation is started manually in its portal.
    Current firmware reads only the schema-5 profile-valid mask and red/NIR dark
    offsets; factor tables are not used for display or BLE NDVI. A new device
    with no blob uses zero dark offsets, normal 3.7x gain, and adaptive
-   integration/exposures; its mask can be zero. Only valid saved 16x profile
-   bits allow high-gain runtime retries. Keep raw serial `capture <profile>`
+   integration/exposures; its mask can be zero. Low raw counts allow 16x
+   retries when the build flag is enabled, regardless of saved profile bits.
+   Keep raw serial `capture <profile>`
    available for diffuser characterisation outside the unit.
 4. Run `pio run` from `firmware/`, check `git diff --check`, and run relevant
    checks for the changed code. Compare the live TLS chains for the GitHub
@@ -63,9 +64,10 @@ the exact blocker and leave the release unpublished or clearly marked incomplete
 
 A request to **flash this device** authorizes a USB flash of the identified unit
 after the checks below. A request for instructions alone does not. Do the
-read-only checks and backup before asking the user to decide a specific
-calibration or hardware incompatibility. Never treat "deploy" as permission to
-flash a device.
+read-only checks and, for existing devices, the backup before asking the user
+to decide a specific calibration or hardware incompatibility. A newly
+assembled device does not need any ESP data backup. Never treat "deploy" as
+permission to flash a device.
 The same procedure applies to v0.3.2 devices reporting `TLS -32512`: their
 OTA client runs out of memory before it can download the repair.
 
@@ -102,12 +104,15 @@ OTA client runs out of memory before it can download the repair.
    before upload so provisioning does not assign a new identity silently.
 5. Capture the baseline. If supported, send `status` at 115200 baud and record
    firmware version, calibration source/schema/valid mask, and sensor status.
-   Read the old partition table at `0x8000` (4 KB). Save and SHA-256 hash the
-   `caldata` partition at `0x400000` (64 KB) when that partition exists. If the
-   layout or calibration location is unknown, read back the entire flash first
-   (8 MB only after confirming 8 MB capacity). Store backups outside Git.
+   For an existing device, read the old partition table at `0x8000` (4 KB).
+   Save and SHA-256 hash the `caldata` partition at `0x400000` (64 KB) when
+   that partition exists. If the layout or calibration location is unknown,
+   read back the entire flash first (8 MB only after confirming 8 MB capacity).
+   Store backups outside Git. For a newly assembled device, skip all ESP flash
+   backups; inspect its partition table only if needed for compatibility.
    Example esptool commands, replacing `<port>` and `<esptool.py>` with the
-   detected values:
+   detected values; use the `read_flash` backup commands only for existing
+   devices:
 
    ```text
    python <esptool.py> --port <port> read_mac
@@ -125,9 +130,11 @@ OTA client runs out of memory before it can download the repair.
    whether to migrate/recalibrate before flashing. Do not promise unchanged
    measurement behavior without a comparison. Do not write to `caldata` or use
    `erase_flash` as part of routine migration.
-7. For a compatible board, confirm the new partition table retains `nvs`,
-   `app0`, `spiffs`, `coredump`, and `caldata` at their old offsets and adds
-   `app1` at `0x500000`. From `firmware/`, use
+7. For an existing compatible board, confirm the new partition table retains
+   `nvs`, `app0`, `spiffs`, `coredump`, and `caldata` at their old offsets and
+   adds `app1` at `0x500000`. For a newly assembled board, confirm the new
+   table places `caldata` at `0x400000` and `app1` at `0x500000`. From
+   `firmware/`, use
    `pio run --target upload --upload-port <port>`; this uploads the bootloader,
    partition table and app, and provisions the device number. Select the port
    explicitly. Do not upload the old `.ino` sketch or only a generic OTA binary.
@@ -135,8 +142,9 @@ OTA client runs out of memory before it can download the repair.
    name, `calibration_schema=5`, and both sensors ready. For an existing
    calibrated device, confirm `calibration_source=flash` and its expected
    valid mask. A new board with no calibration blob may correctly report
-   `calibration_source=none` and mask `0`. Read back `caldata` and compare its
-   SHA-256 to the backup. Run one measurement, then test the 5-second button
-   hold, setup page, and next-press exit. OTA remains a manual portal action.
-   If checks fail, preserve backups and report the exact difference before
+   `calibration_source=none` and mask `0`. For an existing device, read back
+   `caldata` and compare its SHA-256 to the backup. Run one measurement, then
+   test the 5-second button hold, setup page, and next-press exit. OTA remains
+   a manual portal action.
+   If checks fail, preserve any backups and report the exact difference before
    further writes or restoration.

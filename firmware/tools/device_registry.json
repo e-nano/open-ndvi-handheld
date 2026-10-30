@@ -16,10 +16,14 @@
       "device_name": "Manti-S-00004",
       "device_number": 4
     },
+    "8c:94:df:34:dc:a4": {
+      "device_name": "Manti-S-00006",
+      "device_number": 6
+    },
     "f4:65:0b:33:1b:84": {
       "device_name": "Manti-S-00001",
       "device_number": 1
     }
   },
-  "next_device_number": 6
+  "next_device_number": 7
 }

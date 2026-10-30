@@ -100,7 +100,7 @@ uint32_t buttonPressStartedAt = 0;
 
 static constexpr const char *CALIBRATION_FW_ID = "Manti-S-Cal";
 #ifndef MANTI_FIRMWARE_VERSION
-#define MANTI_FIRMWARE_VERSION "v0.3.3-dev4"
+#define MANTI_FIRMWARE_VERSION "v0.3.4-dev1"
 #endif
 static constexpr const char *FIRMWARE_VERSION = MANTI_FIRMWARE_VERSION;
 #ifndef MANTI_FIRMWARE_BUILD_DATE
@@ -112,8 +112,7 @@ static constexpr const char *CALIBRATION_KEY = "blob";
 static constexpr const char *CALIBRATION_PARTITION = "caldata";
 static constexpr uint32_t CALIBRATION_MAGIC = 0x4D534341UL;
 static constexpr uint16_t CALIBRATION_VERSION = 5;
-// This build flag only permits 16x retries; a saved valid 16x profile is also required.
-// Without one, runtime gain stays at 3.7x while integration/exposures adapt.
+// Permit 16x retries when raw I or V is low, regardless of saved profile flags.
 static constexpr bool ENABLE_16X_CALIBRATION = MANTI_ENABLE_16X_CALIBRATION != 0;
 static constexpr size_t SERIAL_COMMAND_MAX_TOKENS = 2;
 static constexpr size_t RED_CHANNEL_INDEX = 9;
@@ -400,10 +399,6 @@ bool get_calibration_profile_index(const char *profile_id, CalibrationProfileInd
   return false;
 }
 
-bool calibration_profile_is_valid(CalibrationProfileIndex index) {
-  return (calibration_valid_mask & (uint16_t)(1U << index)) != 0;
-}
-
 bool load_calibration_from_partition(const char *partition_label) {
   if (!calibration_preferences.begin(CALIBRATION_NAMESPACE, true, partition_label)) return false;
   size_t stored_size = calibration_preferences.getBytesLength(CALIBRATION_KEY);
@@ -542,7 +537,7 @@ bool capture_adaptive_profiles(
     }
 
     bool final_profile = index + 1 == profile_count;
-    if (ENABLE_16X_CALIBRATION && calibration_profile_is_valid(high_profile)) {
+    if (ENABLE_16X_CALIBRATION) {
       bool high_saturated = false;
       if (!capture_profile_raw(
             high_profile,
